@@ -1,0 +1,232 @@
+/* ── 搜索弹窗 ─────────────────────────────────────── */
+.bangumi-modal-filter-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.bangumi-filter-btn {
+  padding: 4px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  font-size: 13px;
+  background: transparent;
+  color: var(--text-normal);
+}
+
+.bangumi-filter-btn.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.bangumi-search-input {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.bangumi-status {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  min-height: 24px;
+}
+
+.bangumi-result-row {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 6px;
+  gap: 12px;
+  transition: background 0.15s;
+}
+
+.bangumi-result-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.bangumi-result-cover {
+  width: 42px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  flex-shrink: 0;
+}
+
+.bangumi-result-info {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.bangumi-result-title {
+  font-weight: bold;
+  font-size: 14px;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bangumi-result-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ── 个人评价及交互弹窗 ───────────────────────────────── */
+.bangumi-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.bangumi-input-row label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.bangumi-input-row select,
+.bangumi-input-row input[type="number"],
+.bangumi-input-row textarea {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field);
+  color: var(--text-normal);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.bangumi-input-row textarea {
+  height: 90px;
+  resize: none;
+}
+
+.bangumi-confirm-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.bangumi-confirm-ok {
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+}
+
+/* ── 设置面板占位符提示 ──────────────────────────────── */
+.bangumi-settings-placeholder-box {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 10px;
+  background: var(--background-secondary);
+}
+
+.bangumi-placeholder-group {
+  margin-bottom: 16px;
+}
+
+.bangumi-placeholder-group:last-child {
+  margin-bottom: 0;
+}
+
+.bangumi-placeholder-group-title {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--text-accent);
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 4px;
+}
+
+.bangumi-placeholder-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--background-modifier-border);
+}
+
+.bangumi-placeholder-row:last-child {
+  border-bottom: none;
+}
+
+.bangumi-placeholder-left {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.bangumi-placeholder-code {
+  display: inline-block;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-accent);
+  background: var(--background-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.bangumi-placeholder-code:hover {
+  background: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+.bangumi-placeholder-code.copied {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.bangumi-placeholder-desc {
+  color: var(--text-normal);
+}
+
+.bangumi-placeholder-example {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 1px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── 模板预览 ─────────────────────────────────────── */
+.bangumi-template-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.bangumi-template-header h4 {
+  margin: 0;
+}
+
+.bangumi-copy-btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  font-size: 12px;
+  background: var(--background-primary);
+}
+
+/* Bangumi 动画改编类型选择器弹窗按钮排版 */
+.bangumi-confirm-btns.bangumi-adaptation-wrapper {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}

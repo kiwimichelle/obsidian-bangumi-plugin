@@ -3,26 +3,7 @@ export type { BangumiSettings } from './types';
 
 // ── 默认模板 ────────────────────────────────────────────────────
 
-export const DEFAULT_ANIME_TEMPLATE = `---
-中文名: {{title}}
-日文名: {{original_title}}
-cover: {{cover_local}}
-改编类型: {{adaptation}}
-{{infobox_frontmatter}}
-总集数: "{{eps_count}}"
-观看状态: 想看
-更新周期: 
-开播年份: {{year}}
-开播季度: {{season}}
-记录日期: {{today}}
-所属系列: "{{related_series}}"
-BGM链接: {{bangumi_url}}
-BGM评分: "{{score}}"
-下载路径: 无
-tags:
-{{tags_yaml}}
----
-**已观看集数**： 
+export const DEFAULT_ANIME_TEMPLATE = `**已观看集数**： 
 **观看网址**： 
 
 # 动画信息
@@ -34,6 +15,7 @@ tags:
 | 中文名 | {{title}} |
 | 日文名 | {{original_title}} |
 {{infobox_table_rows}}
+{{relations_section}}
 | 所属系列 | {{related_series_link}} |
 | 观看状态 | 想看 |
 | 记录日期 | {{today}} |
@@ -47,9 +29,6 @@ tags:
 
 {{summary}}
 
-[简介原文]
-{{summary_raw}}
-
 {{netaba_iframe}}
 
 # 🎞️ 分集随笔
@@ -60,20 +39,7 @@ tags:
 
 `;
 
-export const DEFAULT_BOOK_TEMPLATE = `---
-中文名: {{title}}
-日文名: {{original_title}}
-cover: {{cover_local}}
-{{infobox_frontmatter}}
-阅读状态: 想读
-记录日期: {{today}}
-BGM链接: {{bangumi_url}}
-BGM评分: "{{score}}"
-tags:
-{{tags_yaml}}
----
-
-# {{title}}
+export const DEFAULT_BOOK_TEMPLATE = `# {{title}}
 
 ![[{{cover_local}}|300]]
 
@@ -84,6 +50,7 @@ tags:
 | 中文名 | {{title}} |
 | 日文名 | {{original_title}} |
 {{infobox_table_rows}}
+{{relations_section}}
 | BGM 地址 | [{{title}}]({{bangumi_url}}) |
 | BGM 评分 | {{score}} |
 
@@ -99,20 +66,7 @@ tags:
 
 `;
 
-export const DEFAULT_GAME_TEMPLATE = `---
-中文名: {{title}}
-日文名: {{original_title}}
-cover: {{cover_local}}
-{{infobox_frontmatter}}
-游玩状态: 想玩
-记录日期: {{today}}
-BGM链接: {{bangumi_url}}
-BGM评分: "{{score}}"
-tags:
-{{tags_yaml}}
----
-
-# {{title}}
+export const DEFAULT_GAME_TEMPLATE = `# {{title}}
 
 ![[{{cover_local}}|300]]
 
@@ -123,6 +77,7 @@ tags:
 | 中文名 | {{title}} |
 | 日文名 | {{original_title}} |
 {{infobox_table_rows}}
+{{relations_section}}
 | BGM 地址 | [{{title}}]({{bangumi_url}}) |
 | BGM 评分 | {{score}} |
 
@@ -138,20 +93,7 @@ tags:
 
 `;
 
-export const DEFAULT_MUSIC_TEMPLATE = `---
-中文名: {{title}}
-日文名: {{original_title}}
-cover: {{cover_local}}
-{{infobox_frontmatter}}
-收听状态: 想听
-记录日期: {{today}}
-BGM链接: {{bangumi_url}}
-BGM评分: "{{score}}"
-tags:
-{{tags_yaml}}
----
-
-# {{title}}
+export const DEFAULT_MUSIC_TEMPLATE = `# {{title}}
 
 ![[{{cover_local}}|300]]
 
@@ -162,6 +104,7 @@ tags:
 | 中文名 | {{title}} |
 | 日文名 | {{original_title}} |
 {{infobox_table_rows}}
+{{relations_section}}
 | BGM 地址 | [{{title}}]({{bangumi_url}}) |
 | BGM 评分 | {{score}} |
 
@@ -177,20 +120,7 @@ tags:
 
 `;
 
-export const DEFAULT_REAL_TEMPLATE = `---
-中文名: {{title}}
-日文名: {{original_title}}
-cover: {{cover_local}}
-{{infobox_frontmatter}}
-观看状态: 想看
-记录日期: {{today}}
-BGM链接: {{bangumi_url}}
-BGM评分: "{{score}}"
-tags:
-{{tags_yaml}}
----
-
-# {{title}}
+export const DEFAULT_REAL_TEMPLATE = `# {{title}}
 
 ![[{{cover_local}}|300]]
 
@@ -201,6 +131,7 @@ tags:
 | 中文名 | {{title}} |
 | 日文名 | {{original_title}} |
 {{infobox_table_rows}}
+{{relations_section}}
 | BGM 地址 | [{{title}}]({{bangumi_url}}) |
 | BGM 评分 | {{score}} |
 

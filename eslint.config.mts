@@ -2,12 +2,18 @@ import tseslint from 'typescript-eslint';
 import obsidianmd from "eslint-plugin-obsidianmd";
 import globals from "globals";
 import { globalIgnores } from "eslint/config";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
 	{
 		languageOptions: {
 			globals: {
 				...globals.browser,
+				require: 'readonly',
 			},
 			parserOptions: {
 				projectService: {
@@ -16,11 +22,12 @@ export default tseslint.config(
 						'manifest.json'
 					]
 				},
-				tsconfigRootDir: import.meta.dirname,
+				tsconfigRootDir: __dirname,
 				extraFileExtensions: ['.json']
 			},
 		},
 	},
+	// @ts-ignore
 	...(obsidianmd.configs.recommended as any[]),
 	{
 		rules: {
@@ -33,7 +40,14 @@ export default tseslint.config(
 			'@typescript-eslint/no-unnecessary-type-assertion': 'off',
 			'@typescript-eslint/no-floating-promises': 'off',
 			'@typescript-eslint/no-unused-vars': 'warn',
+			'@typescript-eslint/no-require-imports': 'off',
+			'@typescript-eslint/no-misused-promises': 'off',
 			'no-useless-escape': 'off',
+			'no-console': 'off',
+			'no-restricted-globals': 'off',
+
+			'no-undef': 'off',
+			'import/no-nodejs-modules': 'off',
 			'obsidianmd/no-static-styles-assignment': 'off',
 			'obsidianmd/no-tfile-tfolder-cast': 'off',
 			'obsidianmd/ui/sentence-case': 'off',

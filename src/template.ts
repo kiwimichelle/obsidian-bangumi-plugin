@@ -1,7 +1,9 @@
-import { App } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import { InfoboxEntry, getInfoboxValue } from './api';
 import { DEFAULT_TEMPLATES } from './defaults';
 import { SubjectTypeKey, BangumiSettings } from './types';
+
+const FRONTMATTER_EXCLUDE = ['tags', 'Tags', '标签', 'tag'];
 
 export interface TemplateVars {
   title: string;
@@ -25,137 +27,142 @@ export interface TemplateVars {
   infobox_table_rows: string;
   eps_checkboxes: string;
   netaba_iframe: string;
+  my_status: string;
+  my_rating: string;
+  my_comment: string;
+  // 书籍专属
+  author: string;
+  publisher: string;
+  volumes: string;
+  // 游戏专属
+  developer: string;
+  platform: string;
+  // 音乐专属
+  artist: string;
+  track_count: string;
 }
-
-// ── 日期工具 ────────────────────────────────────────────────────
 
 export function getToday(): string {
-  return new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
-
-export function parseYearSeason(dateStr: string): { year: string; season: string } {
-  if (!dateStr) return { year: '未知年份', season: '未知季度' };
-  const parts = dateStr.split('-');
-  const yearStr = parts[0] ?? '未知年份';
-  const month = parseInt(parts[1] ?? '0');
-  let season = '未知季度';
-  if (month >= 1  && month <= 3)  season = '01月';
-  else if (month >= 4  && month <= 6)  season = '04月';
-  else if (month >= 7  && month <= 9)  season = '07月';
-  else if (month >= 10 && month <= 12) season = '10月';
-  return { year: yearStr, season };
-}
-
-// ── 改编类型判定 ────────────────────────────────────────────────
-
-export function detectAdaptation(entries: InfoboxEntry[]): string {
-  const source = getInfoboxValue(entries, ['原作', '原案']);
-  if (!source) return '';
-  const s = source.toLowerCase();
-  if (s.includes('漫画') || s.includes('manga') || s.includes('comic')) return '漫画改编';
-  if (s.includes('小说') || s.includes('轻小说') || s.includes('novel')) return '小说改编';
-  if (s.includes('游戏') || s.includes('game') || s.includes('gal'))    return '游戏改编';
-  if (s.includes('原创') || source === '-') return '原创';
-  return source;
-}
-
-// ── 季度归档路径 ────────────────────────────────────────────────
-
-export function resolveArchivePath(
-  archiveRoot: string,
-  archiveMode: string,
-  year: string,
-  season: string
-): string {
-  if (archiveMode === 'season') return `${archiveRoot}/${year}/${season}新番`;
-  if (archiveMode === 'year')   return `${archiveRoot}/${year}`;
-  return archiveRoot;
-}
-
-// ── 模板变量构建 ────────────────────────────────────────────────
 
 export function buildTemplateVars(
   detail: any,
   relations: any[],
   infobox: InfoboxEntry[],
   coverLocalPath: string,
+  subjective?: { status: string; rating: string; comment: string }
 ): TemplateVars {
-  const { year, season } = parseYearSeason(detail.date ?? '');
+  const title = String(detail.name_cn || detail.name || '');
+  const original_title = String(detail.name || '');
 
-  // tags
-  const tags: string[] = ['bangumi'];
-  for (const t of (detail.tags ?? [])) {
-    tags.push(`bgm/${t.name}`);
+  let year = '';
+  let season = '';
+  const dateStr = detail.date || '';
+  if (dateStr && dateStr.length >= 4) {
+    year = dateStr.substring(0, 4);
+    if (dateStr.length >= 7) {
+      const m = parseInt(dateStr.substring(5, 7), 10);
+      if (m >= 1 && m <= 3) season = '01月';
+      else if (m >= 4 && m <= 6) season = '04月';
+      else if (m >= 7 && m <= 9) season = '07月';
+      else if (m >= 10 && m <= 12) season = '10月';
+    }
   }
-  const tagsYaml = tags.map(t => `  - ${t}`).join('\n');
 
-  // infobox frontmatter（所有字段平铺，严格 YAML 转义）
-   const infoboxFrontmatter = infobox
-  .map(e => {
-    const k = /[\s:#\[\]{}]/.test(e.key) ? `"${e.key}"` : e.key;
-    return `${k}: ${yamlValue(e.value)}`;
-  })
-  .join('\n');
+  const eps_count = String(detail.eps || detail.total_episodes || '0');
 
-// infobox 正文表格行（竖线转义）
-  const infoboxTableRows = infobox
-  .map(e => `| ${e.key} | ${e.value.replace(/\|/g, '｜').replace(/\n/g, '<br>')} |`)
-  .join('\n');
+  let adaptation = '';
+  const platformVal = getInfoboxValue(infobox, ['轻小说改编', '漫画改编', '游戏改编', '小说改编', '原创']);
+  if (platformVal) {
+    if (platformVal.includes('小说')) adaptation = '小说改编';
+    else if (platformVal.includes('漫画')) adaptation = '漫画改编';
+    else if (platformVal.includes('游戏')) adaptation = '游戏改编';
+    else if (platformVal.includes('原创')) adaptation = '原创';
+  }
 
-  // 分集 checkboxes
-  const eps = parseInt(String(detail.eps ?? '0')) || 0;
-  const epsCheckboxes = eps > 0
-  ? Array.from({ length: eps }, (_, i) => {
-      const num = String(i + 1).length < 2 ? `0${i + 1}` : `${i + 1}`;
-      return `- [ ] **EP ${num}** ｜ `;
-    }).join('\n')
-  : '- [ ] **EP 01** ｜ ';
+  const relatedAnimes = (relations || [])
+    .filter(r => r.type === 2)
+    .map(r => String(r.name_cn || r.name))
+    .filter(Boolean);
+  const relatedSeries = relatedAnimes.slice(0, 3).join('、');
+  const relatedSeriesLink = relatedAnimes.map(name => `[[${name}]]`).slice(0, 3).join('、');
 
-  // 关联系列
-  const seriesRelations = relations.filter(r =>
-    r.relation === 'series' || r.relation === '系列'
-  );
-  const relatedSeries = seriesRelations.length > 0
-    ? seriesRelations.map((r: any) => r.name_cn || r.name).join('、')
-    : '';
-  const relatedSeriesLink = seriesRelations.length > 0
-    ? seriesRelations.map((r: any) => `[[${r.name_cn || r.name}]]`).join('、')
-    : '';
+  const summary = String(detail.summary || '').replace(/\r?\n/g, ' ').trim();
 
-  // summary（简介原文保留日文）
-  const summary = detail.summary ?? '';
+  const tags = (detail.tags || []).map((t: any) => String(t.name)).slice(0, 8);
+  const tagsYaml = tags.length > 0 ? tags.map((t: string) => `  - ${t}`).join('\n') : '';
 
-  // netaba iframe
-  const netabaIframe = `<div style="width:100%;height:600px;border:1px solid #ddd;border-radius:5px;overflow:hidden;"><iframe src="https://netaba.re/subject/${detail.id}" style="width:100%;height:600px;border:0;"></iframe></div>`;
+  let infoboxFrontmatter = '';
+  let infoboxTableRows = '';
+  infobox.forEach(item => {
+    const safeKey = item.key.replace(/[:\s]/g, '_');
+    if (!FRONTMATTER_EXCLUDE.includes(item.key) && item.value) {
+      infoboxFrontmatter += `${safeKey}: "${item.value.replace(/"/g, '\\"')}"\n`;
+    }
+    if (item.value) {
+      infoboxTableRows += `| ${item.key} | ${item.value} |\n`;
+    }
+  });
 
-  const adaptation = detectAdaptation(infobox);
+  let epsCheckboxes = '';
+  const totalEps = parseInt(eps_count, 10);
+  if (!isNaN(totalEps) && totalEps > 0) {
+    for (let i = 1; i <= totalEps; i++) {
+      epsCheckboxes += `- [ ] 第 ${String(i).padStart(2, '0')} 话\n`;
+    }
+  } else {
+    epsCheckboxes = '- [ ] 第 01 话\n';
+  }
+
+  const netabaIframe = `<iframe src="https://netaba.re/subject/${String(detail.id)}" width="100%" height="450" frameborder="0" allowtransparency="true"></iframe>`;
+
+  const author = getInfoboxValue(infobox, ['作者', '原著']);
+  const publisher = getInfoboxValue(infobox, ['出版社']);
+  const volumes = getInfoboxValue(infobox, ['册数', '卷数']);
+  const developer = getInfoboxValue(infobox, ['开发', '制作公司', '游戏制作']);
+  const platform = getInfoboxValue(infobox, ['平台']);
+  const artist = getInfoboxValue(infobox, ['艺术家', '歌手', '演值']);
+  const track_count = getInfoboxValue(infobox, ['播放时长', '曲目数']);
 
   return {
-    title:               (detail.name_cn || detail.name).replace(/[\\/:*?"<>|]/g, '_'),
-    original_title:      detail.name ?? '',
-    cover_local:         coverLocalPath,
+    title,
+    original_title,
+    cover_local: coverLocalPath,
     adaptation,
-    eps_count:           String(detail.eps ?? ''),
+    eps_count,
     year,
     season,
-    today:               getToday(),
-    related_series:      relatedSeries,
+    today: getToday(),
+    related_series: relatedSeries,
     related_series_link: relatedSeriesLink,
-    bangumi_url:         `https://bgm.tv/subject/${detail.id}`,
-    bangumi_id:          String(detail.id),
-    score:               String(detail.rating?.score ?? ''),
-    rank:                String(detail.rating?.rank ?? ''),
+    bangumi_url: `https://bgm.tv/subject/${String(detail.id)}`,
+    bangumi_id: String(detail.id),
+    score: String(detail.rating?.score || ''),
+    rank: String(detail.rating?.rank || ''),
     summary,
-    summary_raw: summary,  // API 不区分中日文，同源
-    tags_yaml:           tagsYaml,
-    infobox_frontmatter: infoboxFrontmatter,
-    infobox_table_rows:  infoboxTableRows,
-    eps_checkboxes:      epsCheckboxes,
-    netaba_iframe:       netabaIframe,
+    summary_raw: String(detail.summary || ''),
+    tags_yaml: tagsYaml,
+    infobox_frontmatter: infoboxFrontmatter.trim(),
+    infobox_table_rows: infoboxTableRows.trim(),
+    eps_checkboxes: epsCheckboxes.trim(),
+    netaba_iframe: netabaIframe,
+    my_status: subjective?.status || '',
+    my_rating: subjective?.rating || '',
+    my_comment: subjective?.comment || '',
+    author,
+    publisher,
+    volumes,
+    developer,
+    platform,
+    artist,
+    track_count,
   };
 }
-
-// ── 模板渲染 ────────────────────────────────────────────────────
 
 export async function resolveTemplate(
   app: App,
@@ -165,45 +172,30 @@ export async function resolveTemplate(
   const config = settings.subjectTypes[typeKey];
   if (config.templateSource === 'file' && config.templateFile) {
     const file = app.vault.getAbstractFileByPath(config.templateFile);
-    if (file && 'extension' in file) {
-      return await app.vault.read(file as any);
+    if (file instanceof TFile) {
+      return await app.vault.read(file);
     }
   }
   return DEFAULT_TEMPLATES[typeKey];
 }
 
 export function renderTemplate(template: string, vars: TemplateVars): string {
-  let result = template;
-  const keys = Object.keys(vars) as Array<keyof TemplateVars>;
-  for (const key of keys) {
-    const value = vars[key] ?? '';
-    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
-  }
-  return result;
+  let output = template;
+  (Object.keys(vars) as Array<keyof TemplateVars>).forEach(k => {
+    const regex = new RegExp(`\\{\\{${k}\\}\\}`, 'g');
+    output = output.replace(regex, vars[k] || '');
+  });
+  return output;
 }
 
-// ── 工具函数 ────────────────────────────────────────────────────
-
-function yamlValue(val: string): string {
-  if (!val) return '""';
-
-  // 多行内容用 | 块标量
-  if (val.includes('\n')) {
-    const indented = val.split('\n').map(l => `  ${l}`).join('\n');
-    return `|\n${indented}`;
-  }
-
-  // 包含 YAML 特殊字符的用双引号包裹
-  const needsQuote = /[:#\[\]{},&*?|<>=!%@`'"\\]/.test(val)
-    || val.startsWith(' ')
-    || val.endsWith(' ')
-    || val === 'true' || val === 'false'
-    || val === 'null' || val === '~'
-    || /^\d/.test(val);  // 数字开头也加引号避免类型误判
-
-  if (needsQuote) {
-    return `"${val.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  }
-
-  return val;
+export function resolveArchivePath(
+  root: string,
+  mode: string,
+  year: string,
+  season: string
+): string {
+  if (!root) return '';
+  if (mode === 'season' && year && season) return `${root}/${year}/${season}新番`;
+  if (mode === 'year' && year) return `${root}/${year}`;
+  return root;
 }
