@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from 'node:module';
+import fs from 'node:fs'; // 新增：用于处理本地文件复制
 
 const banner =
 `/*
@@ -10,6 +11,10 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = (process.argv[2] === "production");
+
+// 🛠️ 【唯一需要你修改的地方】：改成你电脑上 Obsidian 测试库该插件的绝对路径
+// 注意：Windows 路径下的反斜杠建议全部改成正斜杠 "/"，例如 "D:/Obsidian/Vault/.obsidian/plugins/your-plugin-id"
+const targetDir = "D:/Obsidian/Wish/.obsidian/plugins/obsidian-bangumi-plugin";
 
 const context = await esbuild.context({
 	banner: {
@@ -37,8 +42,37 @@ const context = await esbuild.context({
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
-	outfile: "main.js",
+	// ✨ 核心优化 1：如果是开发模式，直接把 JS 编译到 Obsidian 的插件目录
+	outfile: prod ? "main.js" : `${targetDir}/main.js`,
 	minify: prod,
+	// ✨ 核心优化 2：加入自动化钩子插件，每次保存代码时自动同步配置文件
+	plugins: [
+		{
+			name: 'auto-copy-to-obsidian',
+			setup(build) {
+				build.onEnd(() => {
+					if (!prod && targetDir) {
+						try {
+							// 如果 Obsidian 里的插件文件夹不存在，自动创建它
+							if (!fs.existsSync(targetDir)) {
+								fs.mkdirSync(targetDir, { recursive: true });
+							}
+							// 自动复制配置文件
+							if (fs.existsSync("manifest.json")) {
+								fs.copyFileSync("manifest.json", `${targetDir}/manifest.json`);
+							}
+							if (fs.existsSync("styles.css")) {
+								fs.copyFileSync("styles.css", `${targetDir}/styles.css`);
+							}
+							console.log(`\x1b[32m[Watch] 编译成功，已自动同步至 Obsidian 插件目录\x1b[0m`);
+						} catch (err) {
+							console.error(`\x1b[31m[Error] 自动复制文件失败:\x1b[0m`, err);
+						}
+					}
+				});
+			},
+		}
+	]
 });
 
 if (prod) {
