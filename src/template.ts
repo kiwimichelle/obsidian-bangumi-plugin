@@ -1,7 +1,10 @@
-import { App } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import { InfoboxEntry, getInfoboxValue } from './api';
 import { DEFAULT_TEMPLATES } from './defaults';
 import { SubjectTypeKey, BangumiSettings } from './types';
+
+// infobox 展开进 frontmatter 时排除的 key（避免和固定字段冲突）
+const FRONTMATTER_EXCLUDE = ['tags', 'Tags', '标签', 'tag'];
 
 export interface TemplateVars {
   title: string;
@@ -25,12 +28,20 @@ export interface TemplateVars {
   infobox_table_rows: string;
   eps_checkboxes: string;
   netaba_iframe: string;
+  // 书籍专属
+  author: string;
+  publisher: string;
+  volumes: string;
+  // 游戏专属
+  developer: string;
+  platform: string;
+  // 音乐专属
+  artist: string;
+  track_count: string;
 }
 
-// ── 日期工具 ────────────────────────────────────────────────────
-
 export function getToday(): string {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toISOString().split('T')[0] ?? '';
 }
 
 export function parseYearSeason(dateStr: string): { year: string; season: string } {
@@ -46,8 +57,6 @@ export function parseYearSeason(dateStr: string): { year: string; season: string
   return { year: yearStr, season };
 }
 
-// ── 改编类型判定 ────────────────────────────────────────────────
-
 export function detectAdaptation(entries: InfoboxEntry[]): string {
   const source = getInfoboxValue(entries, ['原作', '原案']);
   if (!source) return '';
@@ -56,10 +65,8 @@ export function detectAdaptation(entries: InfoboxEntry[]): string {
   if (s.includes('小说') || s.includes('轻小说') || s.includes('novel')) return '小说改编';
   if (s.includes('游戏') || s.includes('game') || s.includes('gal'))    return '游戏改编';
   if (s.includes('原创') || source === '-') return '原创';
-  return source;
+  return '';
 }
-
-// ── 季度归档路径 ────────────────────────────────────────────────
 
 export function resolveArchivePath(
   archiveRoot: string,
@@ -72,7 +79,31 @@ export function resolveArchivePath(
   return archiveRoot;
 }
 
-// ── 模板变量构建 ────────────────────────────────────────────────
+function yamlValue(val: string): string {
+  if (!val) return '""';
+
+  if (val.includes('\n')) {
+    const indented = val.split('\n').map(l => `  ${l}`).join('\n');
+    return `|\n${indented}`;
+  }
+
+  const needsQuote =
+    /[:#\[\]{},&*?|<>=!%@`'"\\]/.test(val) ||
+    val.startsWith(' ') ||
+    val.endsWith(' ') ||
+    val === 'true' || val === 'false' ||
+    val === 'null' || val === '~' ||
+    /^\d/.test(val) ||
+    val.includes('(') ||   // 含括号也要加引号
+    val.includes(')') ||
+    val.includes('→');     // 特殊字符
+
+  if (needsQuote) {
+    return `"${val.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }
+
+  return val;
+}
 
 export function buildTemplateVars(
   detail: any,
@@ -85,77 +116,88 @@ export function buildTemplateVars(
   // tags
   const tags: string[] = ['bangumi'];
   for (const t of (detail.tags ?? [])) {
-    tags.push(`bgm/${t.name}`);
+    tags.push(`bgm/${String(t.name)}`);
   }
   const tagsYaml = tags.map(t => `  - ${t}`).join('\n');
 
-  // infobox frontmatter（所有字段平铺，严格 YAML 转义）
-   const infoboxFrontmatter = infobox
+const infoboxFrontmatter = infobox
+  .filter(e => !FRONTMATTER_EXCLUDE.includes(e.key))
   .map(e => {
     const k = /[\s:#\[\]{}]/.test(e.key) ? `"${e.key}"` : e.key;
     return `${k}: ${yamlValue(e.value)}`;
   })
   .join('\n');
 
-// infobox 正文表格行（竖线转义）
+  // infobox 正文表格行
   const infoboxTableRows = infobox
-  .map(e => `| ${e.key} | ${e.value.replace(/\|/g, '｜').replace(/\n/g, '<br>')} |`)
-  .join('\n');
+    .map(e => `| ${e.key} | ${e.value.replace(/\|/g, '｜').replace(/\n/g, '<br>')} |`)
+    .join('\n');
 
   // 分集 checkboxes
   const eps = parseInt(String(detail.eps ?? '0')) || 0;
   const epsCheckboxes = eps > 0
-  ? Array.from({ length: eps }, (_, i) => {
-      const num = String(i + 1).length < 2 ? `0${i + 1}` : `${i + 1}`;
-      return `- [ ] **EP ${num}** ｜ `;
-    }).join('\n')
-  : '- [ ] **EP 01** ｜ ';
+    ? Array.from({ length: eps }, (_, i) => {
+        const n = i + 1;
+        const num = n < 10 ? `0${n}` : `${n}`;
+        return `- [ ] **EP ${num}** ｜ `;
+      }).join('\n')
+    : '- [ ] **EP 01** ｜ ';
 
   // 关联系列
   const seriesRelations = relations.filter(r =>
     r.relation === 'series' || r.relation === '系列'
   );
-  const relatedSeries = seriesRelations.length > 0
-    ? seriesRelations.map((r: any) => r.name_cn || r.name).join('、')
-    : '';
-  const relatedSeriesLink = seriesRelations.length > 0
-    ? seriesRelations.map((r: any) => `[[${r.name_cn || r.name}]]`).join('、')
-    : '';
+  const relatedSeries = seriesRelations.map((r: any) =>
+    String(r.name_cn || r.name)
+  ).join('、');
+  const relatedSeriesLink = seriesRelations.map((r: any) =>
+    `[[${String(r.name_cn || r.name)}]]`
+  ).join('、');
 
-  // summary（简介原文保留日文）
-  const summary = detail.summary ?? '';
+  const summary = String(detail.summary ?? '');
 
-  // netaba iframe
-  const netabaIframe = `<div style="width:100%;height:600px;border:1px solid #ddd;border-radius:5px;overflow:hidden;"><iframe src="https://netaba.re/subject/${detail.id}" style="width:100%;height:600px;border:0;"></iframe></div>`;
+  const netabaIframe = `<div style="width:100%;height:600px;border:1px solid #ddd;border-radius:5px;overflow:hidden;"><iframe src="https://netaba.re/subject/${String(detail.id)}" style="width:100%;height:600px;border:0;"></iframe></div>`;
 
-  const adaptation = detectAdaptation(infobox);
+  // 分类专属字段
+  const author      = getInfoboxValue(infobox, ['作者', '原作', '著']);
+  const publisher   = getInfoboxValue(infobox, ['出版社', '发行']);
+  const volumes     = getInfoboxValue(infobox, ['册数', '卷数', '话数']);
+  const developer   = getInfoboxValue(infobox, ['开发', '开发商', '开发者']);
+  const platform    = getInfoboxValue(infobox, ['平台', '游戏平台', '运行平台']);
+  const artist      = getInfoboxValue(infobox, ['艺术家', '演唱', '歌手', 'Artist']);
+  const track_count = getInfoboxValue(infobox, ['曲目数', '曲数', 'Tracks']);
 
   return {
-    title:               (detail.name_cn || detail.name).replace(/[\\/:*?"<>|]/g, '_'),
-    original_title:      detail.name ?? '',
+    title:               (String(detail.name_cn || detail.name)).replace(/[\\/:*?"<>|]/g, '_'),
+    original_title:      String(detail.name ?? ''),
     cover_local:         coverLocalPath,
-    adaptation,
+    adaptation:          detectAdaptation(infobox),
     eps_count:           String(detail.eps ?? ''),
     year,
     season,
     today:               getToday(),
     related_series:      relatedSeries,
     related_series_link: relatedSeriesLink,
-    bangumi_url:         `https://bgm.tv/subject/${detail.id}`,
+    bangumi_url:         `https://bgm.tv/subject/${String(detail.id)}`,
     bangumi_id:          String(detail.id),
     score:               String(detail.rating?.score ?? ''),
     rank:                String(detail.rating?.rank ?? ''),
     summary,
-    summary_raw: summary,  // API 不区分中日文，同源
+    summary_raw:         summary,
     tags_yaml:           tagsYaml,
     infobox_frontmatter: infoboxFrontmatter,
     infobox_table_rows:  infoboxTableRows,
     eps_checkboxes:      epsCheckboxes,
     netaba_iframe:       netabaIframe,
+    author,
+    publisher,
+    volumes,
+    developer,
+    platform,
+    artist,
+    track_count,
   };
 }
-
-// ── 模板渲染 ────────────────────────────────────────────────────
 
 export async function resolveTemplate(
   app: App,
@@ -165,8 +207,8 @@ export async function resolveTemplate(
   const config = settings.subjectTypes[typeKey];
   if (config.templateSource === 'file' && config.templateFile) {
     const file = app.vault.getAbstractFileByPath(config.templateFile);
-    if (file && 'extension' in file) {
-      return await app.vault.read(file as any);
+    if (file instanceof TFile) {
+      return await app.vault.read(file);
     }
   }
   return DEFAULT_TEMPLATES[typeKey];
@@ -180,30 +222,4 @@ export function renderTemplate(template: string, vars: TemplateVars): string {
     result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
   }
   return result;
-}
-
-// ── 工具函数 ────────────────────────────────────────────────────
-
-function yamlValue(val: string): string {
-  if (!val) return '""';
-
-  // 多行内容用 | 块标量
-  if (val.includes('\n')) {
-    const indented = val.split('\n').map(l => `  ${l}`).join('\n');
-    return `|\n${indented}`;
-  }
-
-  // 包含 YAML 特殊字符的用双引号包裹
-  const needsQuote = /[:#\[\]{},&*?|<>=!%@`'"\\]/.test(val)
-    || val.startsWith(' ')
-    || val.endsWith(' ')
-    || val === 'true' || val === 'false'
-    || val === 'null' || val === '~'
-    || /^\d/.test(val);  // 数字开头也加引号避免类型误判
-
-  if (needsQuote) {
-    return `"${val.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  }
-
-  return val;
 }

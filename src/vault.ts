@@ -1,7 +1,6 @@
 import { App, Notice, TFile, TFolder, requestUrl } from 'obsidian';
-import { BangumiSettings, SubjectTypeKey } from './types';
-
-// ── 封面下载 ────────────────────────────────────────────────────
+import { SubjectTypeKey } from './types';
+import type { InfoboxEntry } from './api';
 
 export async function downloadCover(
   app: App,
@@ -28,26 +27,22 @@ export async function downloadCover(
   }
 }
 
-// ── 本地视频文件夹 ──────────────────────────────────────────────
-
-export async function createLocalVideoDir(
-  rootDir: string,
-  animeName: string
-): Promise<void> {
+export async function createLocalVideoDir(rootDir: string, animeName: string): Promise<void> {
   if (!rootDir) return;
   try {
-    const path = (window as any).require('path') as typeof import('path');
-    const fs   = (window as any).require('fs')   as typeof import('fs');
-    const target = path.join(rootDir, animeName.replace(/[\\/:*?"<>|]/g, '_'));
-    if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+    const safeName = animeName.replace(/[\\/:*?"<>|]/g, '_');
+    // Obsidian 桌面端基于 Electron，可以访问 Node.js 内置模块
+    const nodePath = require('path') as typeof import('path');
+    const nodeFs   = require('fs')   as typeof import('fs');
+    const fullPath = nodePath.join(rootDir, safeName);
+    if (!nodeFs.existsSync(fullPath)) {
+      nodeFs.mkdirSync(fullPath, { recursive: true });
+    }
   } catch {
     new Notice('⚠️ 本地视频文件夹创建失败');
   }
 }
 
-// ── 防撞命名 ────────────────────────────────────────────────────
-
-// 递归收集某文件夹下所有 .md 文件的 stem（不含扩展名）→ Set
 function collectMdStems(app: App, folderPath: string): Set<string> {
   const stems = new Set<string>();
   const folder = app.vault.getAbstractFileByPath(folderPath);
@@ -55,12 +50,9 @@ function collectMdStems(app: App, folderPath: string): Set<string> {
 
   const walk = (f: TFolder) => {
     for (const child of f.children) {
-      if (child instanceof TFolder) {
-        walk(child);
-      } else if (child instanceof TFile) {
-        if (child.name.endsWith('.md')) {
-          stems.add(child.name.slice(0, -3));
-        }
+      if (child instanceof TFolder) walk(child);
+      else if (child instanceof TFile && child.name.endsWith('.md')) {
+        stems.add(child.name.slice(0, -3));
       }
     }
   };
@@ -68,38 +60,36 @@ function collectMdStems(app: App, folderPath: string): Set<string> {
   return stems;
 }
 
-// 读取某笔记 frontmatter 里的 bangumi_id
 async function readBangumiId(app: App, filePath: string): Promise<string> {
   const file = app.vault.getAbstractFileByPath(filePath);
-  if (!file || !('extension' in file)) return '';
-  const content = await app.vault.read(file as TFile);
-  const match = content.match(/^bangumi_id:\s*(.+)$/m);
-  return match ? match[1].trim().replace(/['"]/g, '') : '';
+  if (!(file instanceof TFile)) return '';
+  const content = await app.vault.read(file);
+  const match = content.match(/^bangumi_id:\s*["']?(\d+)["']?$/m);
+  return match?.[1] ?? '';
 }
 
-// 在某文件夹及其子目录下找到指定 stem 的文件路径
 function findMdByName(app: App, folderPath: string, stem: string): string | null {
   const folder = app.vault.getAbstractFileByPath(folderPath);
-  if (!folder || !('children' in folder)) return null;
+  if (!(folder instanceof TFolder)) return null;
 
   const walk = (f: TFolder): string | null => {
     for (const child of f.children) {
-      if ('children' in child) {
-        const found = walk(child as TFolder);
+      if (child instanceof TFolder) {
+        const found = walk(child);
         if (found) return found;
-      } else if (child.name === `${stem}.md`) {
+      } else if (child instanceof TFile && child.name === `${stem}.md`) {
         return child.path;
       }
     }
     return null;
   };
-  return walk(folder as TFolder);
+  return walk(folder);
 }
 
 export interface NamingResult {
-  filename: string;          // 最终文件名（不含 .md）
-  conflict: 'none' | 'same' | 'different';  // same=同ID覆盖, different=不同作品
-  existingPath: string;      // 已存在文件的路径（conflict !== none 时有值）
+  filename: string;
+  conflict: 'none' | 'same' | 'different';
+  existingPath: string;
 }
 
 export async function resolveNaming(
@@ -107,102 +97,64 @@ export async function resolveNaming(
   baseName: string,
   typeKey: SubjectTypeKey,
   typeLabel: string,
-  archiveRoot: string,        // 当前类型归档根路径
-  otherArchiveRoots: string[], // 其他类型归档根路径
+  archiveRoot: string,
+  otherArchiveRoots: string[],
   year: string,
   bangumiId: string,
-  subjectTypeDesc: string,    // 如 TV/剧场版/OVA，从 infobox 读取
+  subjectTypeDesc: string,
 ): Promise<NamingResult> {
-
-  // ── 第一步：跨媒介检测 ──
+  // 第一步：跨媒介检测
   let name = baseName;
-  let hasCrossConflict = false;
-
   for (const root of otherArchiveRoots) {
     const stems = collectMdStems(app, root);
-    // 检查原始名 和 加了各种后缀的名字
     if (stems.has(baseName) || stems.has(`${baseName} (${typeLabel})`)) {
-      hasCrossConflict = true;
+      name = `${baseName} (${typeLabel})`;
       break;
     }
   }
 
-  if (hasCrossConflict) {
-    name = `${baseName} (${typeLabel})`;
-  }
-
-  // ── 第二步：同类型内检测 ──
+  // 第二步：同类型内检测
   const existingPath = findMdByName(app, archiveRoot, name);
+  if (!existingPath) return { filename: name, conflict: 'none', existingPath: '' };
 
-  if (!existingPath) {
-    return { filename: name, conflict: 'none', existingPath: '' };
-  }
-
-  // 读取已有文件的 bangumi_id
   const existingId = await readBangumiId(app, existingPath);
+  if (existingId === bangumiId) return { filename: name, conflict: 'same', existingPath };
 
-  if (existingId === bangumiId) {
-    // 同一作品，覆盖逻辑
-    return { filename: name, conflict: 'same', existingPath };
-  }
-
-  // 不同作品，加年份后缀
+  // 加年份后缀
   const nameWithYear = `${name} (${year})`;
   const existingWithYear = findMdByName(app, archiveRoot, nameWithYear);
-
-  if (!existingWithYear) {
-    return { filename: nameWithYear, conflict: 'none', existingPath: '' };
-  }
+  if (!existingWithYear) return { filename: nameWithYear, conflict: 'none', existingPath: '' };
 
   const existingYearId = await readBangumiId(app, existingWithYear);
-  if (existingYearId === bangumiId) {
-    return { filename: nameWithYear, conflict: 'same', existingPath: existingWithYear };
-  }
+  if (existingYearId === bangumiId) return { filename: nameWithYear, conflict: 'same', existingPath: existingWithYear };
 
-  // 年份还冲突，加年份+类型描述（TV/剧场版等）
+  // 加年份+类型描述
   const desc = subjectTypeDesc || typeLabel;
   const nameWithYearDesc = `${name} (${year} ${desc})`;
   const existingWithYearDesc = findMdByName(app, archiveRoot, nameWithYearDesc);
-
-  if (!existingWithYearDesc) {
-    return { filename: nameWithYearDesc, conflict: 'none', existingPath: '' };
-  }
+  if (!existingWithYearDesc) return { filename: nameWithYearDesc, conflict: 'none', existingPath: '' };
 
   const existingYearDescId = await readBangumiId(app, existingWithYearDesc);
-  if (existingYearDescId === bangumiId) {
-    return { filename: nameWithYearDesc, conflict: 'same', existingPath: existingWithYearDesc };
-  }
+  if (existingYearDescId === bangumiId) return { filename: nameWithYearDesc, conflict: 'same', existingPath: existingWithYearDesc };
 
-  // 极端情况：加 bangumi_id 保底
-  return {
-    filename: `${name} (${year} ${desc} ${bangumiId})`,
-    conflict: 'none',
-    existingPath: ''
-  };
+  // 保底：加 bangumi_id
+  return { filename: `${name} (${year} ${desc} ${bangumiId})`, conflict: 'none', existingPath: '' };
 }
-
-// ── 覆盖更新：提取手写内容 ─────────────────────────────────────
 
 export interface PreservedContent {
   watchedEps: string;
-  watchUrl:   string;
-  episodeNotes:    string;
+  watchUrl: string;
+  episodeNotes: string;
   personalSummary: string;
 }
 
-export async function extractPreservedContent(
-  app: App,
-  filePath: string
-): Promise<PreservedContent> {
-  const result: PreservedContent = {
-    watchedEps: '', watchUrl: '',
-    episodeNotes: '', personalSummary: '',
-  };
+export async function extractPreservedContent(app: App, filePath: string): Promise<PreservedContent> {
+  const result: PreservedContent = { watchedEps: '', watchUrl: '', episodeNotes: '', personalSummary: '' };
   const file = app.vault.getAbstractFileByPath(filePath);
-  if (!file || !('extension' in file)) return result;
+  if (!(file instanceof TFile)) return result;
 
-  const content = await app.vault.read(file as TFile);
-  const lines   = content.split('\n');
+  const content = await app.vault.read(file);
+  const lines = content.split('\n');
 
   const epsLine = lines.find(l => l.startsWith('**已观看集数**'));
   if (epsLine) result.watchedEps = epsLine.replace('**已观看集数**：', '').trim();
@@ -220,27 +172,18 @@ function extractSection(content: string, heading: string): string {
   const start = content.indexOf(heading);
   if (start === -1) return '';
   const afterHeading = content.indexOf('\n', start) + 1;
-  const nextHeading  = content.indexOf('\n# ', afterHeading);
+  const nextHeading = content.indexOf('\n# ', afterHeading);
   const end = nextHeading === -1 ? content.length : nextHeading;
   return content.slice(afterHeading, end).trim();
 }
 
-export function injectPreservedContent(
-  newContent: string,
-  preserved: PreservedContent
-): string {
+export function injectPreservedContent(newContent: string, preserved: PreservedContent): string {
   let result = newContent;
   if (preserved.watchedEps) {
-    result = result.replace(
-      /\*\*已观看集数\*\*：.*/,
-      `**已观看集数**： ${preserved.watchedEps}`
-    );
+    result = result.replace(/\*\*已观看集数\*\*：.*/, `**已观看集数**： ${preserved.watchedEps}`);
   }
   if (preserved.watchUrl) {
-    result = result.replace(
-      /\*\*观看网址\*\*：.*/,
-      `**观看网址**： ${preserved.watchUrl}`
-    );
+    result = result.replace(/\*\*观看网址\*\*：.*/, `**观看网址**： ${preserved.watchUrl}`);
   }
   if (preserved.episodeNotes) {
     result = result.replace(
@@ -249,15 +192,10 @@ export function injectPreservedContent(
     );
   }
   if (preserved.personalSummary) {
-    result = result.replace(
-      /(# 个人总结\n)([\s\S]*?)$/,
-      `$1\n${preserved.personalSummary}`
-    );
+    result = result.replace(/(# 个人总结\n)([\s\S]*?)$/, `$1\n${preserved.personalSummary}`);
   }
   return result;
 }
-
-// ── 工具 ────────────────────────────────────────────────────────
 
 export async function ensureFolder(app: App, folderPath: string): Promise<void> {
   const parts = folderPath.split('/').filter(Boolean);
@@ -267,8 +205,69 @@ export async function ensureFolder(app: App, folderPath: string): Promise<void> 
     const existing = app.vault.getAbstractFileByPath(current);
     if (!existing) {
       await app.vault.createFolder(current);
-    } else if (!('children' in existing)) {
+    } else if (!(existing instanceof TFolder)) {
       throw new Error(`路径 ${current} 已被文件占用`);
     }
   }
+}
+export async function writeFrontmatter(
+  app: App,
+  file: TFile,
+  detail: any,
+  infobox: InfoboxEntry[],
+  vars: import('./template').TemplateVars,
+  typeKey: SubjectTypeKey,
+  coverLocal: string,
+): Promise<void> {
+  const INFOBOX_EXCLUDE = ['tags', 'Tags', '标签', 'tag', '中文名', '日文名'];
+
+  await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    // 固定字段
+    fm['中文名']   = vars.title;
+    fm['日文名']   = vars.original_title;
+    fm['cover']    = coverLocal;
+    fm['BGM链接']  = vars.bangumi_url;
+    fm['BGM评分']  = vars.score;
+    fm['bangumi_id'] = vars.bangumi_id;
+    fm['记录日期'] = vars.today;
+
+    // 分类专属
+    if (typeKey === 'anime') {
+      fm['改编类型'] = vars.adaptation;
+      fm['总集数']   = vars.eps_count;
+      fm['开播年份'] = vars.year;
+      fm['开播季度'] = vars.season;
+      if (vars.related_series) fm['所属系列'] = `[[${vars.related_series}]]`;
+    }
+    if (typeKey === 'book') {
+      if (vars.author)    fm['作者']   = vars.author;
+      if (vars.publisher) fm['出版社'] = vars.publisher;
+      if (vars.volumes)   fm['册数']   = vars.volumes;
+    }
+    if (typeKey === 'game') {
+      if (vars.developer) fm['开发商'] = vars.developer;
+      if (vars.platform)  fm['平台']   = vars.platform;
+    }
+    if (typeKey === 'music') {
+      if (vars.artist)      fm['艺术家'] = vars.artist;
+      if (vars.track_count) fm['曲目数'] = vars.track_count;
+    }
+
+    // infobox 所有字段（Obsidian 自动处理转义）
+    for (const entry of infobox) {
+      if (!INFOBOX_EXCLUDE.includes(entry.key)) {
+        fm[entry.key] = entry.value;
+      }
+    }
+
+    // tags
+    const tags: string[] = ['bangumi'];
+    for (const t of (detail.tags ?? [])) {
+      tags.push(`bgm/${String(t.name)}`);
+    }
+    const existing: string[] = Array.isArray(fm['tags'])
+      ? (fm['tags'] as string[])
+      : [];
+    fm['tags'] = Array.from(new Set([...existing, ...tags]));
+  });
 }

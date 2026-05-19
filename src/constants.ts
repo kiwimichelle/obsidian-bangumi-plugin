@@ -17,11 +17,11 @@ export const SUBJECT_TYPE_LABEL: Record<SubjectTypeKey, string> = {
 };
 
 export const TYPE_FILTERS = [
-  { label: '全部',  value: 0 },
-  { label: '动画',  value: 2 },
-  { label: '书籍',  value: 1 },
-  { label: '游戏',  value: 4 },
-  { label: '音乐',  value: 3 },
+  { label: '全部',   value: 0 },
+  { label: '动画',   value: 2 },
+  { label: '书籍',   value: 1 },
+  { label: '游戏',   value: 4 },
+  { label: '音乐',   value: 3 },
   { label: '三次元', value: 6 },
 ];
 

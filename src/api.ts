@@ -9,7 +9,7 @@ function headers(token?: string): Record<string, string> {
   return h;
 }
 
-export async function searchSubjects(keyword: string, type: number, token?: string) {
+export async function searchSubjects(keyword: string, type: number, token?: string): Promise<any[]> {
   const typeParam = type > 0 ? `&type=${type}` : '';
   const res = await requestUrl({
     url: `${BASE}/search/subject/${encodeURIComponent(keyword)}?responseGroup=small&max_results=10${typeParam}`,
@@ -18,23 +18,21 @@ export async function searchSubjects(keyword: string, type: number, token?: stri
   return (res.json.list ?? []) as any[];
 }
 
-export async function fetchSubject(id: number, token?: string) {
+export async function fetchSubject(id: number, token?: string): Promise<any> {
   const res = await requestUrl({
     url: `${BASE}/v0/subjects/${id}`,
     headers: headers(token),
   });
-  return res.json as any;
+  return res.json;
 }
 
-export async function fetchSubjectRelations(id: number, token?: string) {
+export async function fetchSubjectRelations(id: number, token?: string): Promise<any[]> {
   const res = await requestUrl({
     url: `${BASE}/v0/subjects/${id}/subjects`,
     headers: headers(token),
   });
-  return (Array.isArray(res.json) ? res.json : []) as any[];
+  return Array.isArray(res.json) ? res.json : [];
 }
-
-// ── Infobox 解析 ────────────────────────────────────────────────
 
 export type InfoboxEntry = { key: string; value: string };
 
@@ -46,7 +44,9 @@ export function parseInfobox(raw: any[]): InfoboxEntry[] {
       val = item.value;
     } else if (Array.isArray(item.value)) {
       val = item.value
-        .map((v: any) => typeof v === 'object' ? Object.values(v).filter(Boolean).join('') : String(v))
+        .map((v: any) => typeof v === 'object'
+          ? Object.values(v).filter(Boolean).join('')
+          : String(v))
         .filter(Boolean)
         .join('、');
     } else {

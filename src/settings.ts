@@ -1,10 +1,9 @@
-import { App, Notice, PluginSettingTab, Setting, TFile, Modal } from 'obsidian';
-import { BangumiSettings, SubjectTypeKey } from './types';
+import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { SubjectTypeKey } from './types';
 import { SUBJECT_TYPE_LABEL, TYPE_KEYS } from './constants';
 import { DEFAULT_TEMPLATES, DEFAULT_SETTINGS } from './defaults';
 import BangumiPlugin from '../main';
 
-// 替换原来的 PLACEHOLDER_DOCS 常量
 const PLACEHOLDER_GROUPS: {
   label: string;
   types: SubjectTypeKey[] | 'all';
@@ -14,21 +13,21 @@ const PLACEHOLDER_GROUPS: {
     label: '通用字段',
     types: 'all',
     items: [
-      { key: '{{title}}',               desc: '中文名',             example: '游戏人生' },
-      { key: '{{original_title}}',      desc: '原名（日文名）',     example: 'ノーゲーム・ノーライフ' },
-      { key: '{{cover_local}}',         desc: '封面本地路径',       example: 'ACG/Anime/_covers/游戏人生.jpg' },
-      { key: '{{today}}',               desc: '记录日期（今天）',   example: '2026-05-19' },
-      { key: '{{score}}',               desc: 'BGM 评分',          example: '8.1' },
-      { key: '{{rank}}',                desc: 'BGM 排名',          example: '42' },
-      { key: '{{bangumi_url}}',         desc: 'BGM 链接',          example: 'https://bgm.tv/subject/39452' },
-      { key: '{{bangumi_id}}',          desc: 'BGM 条目 ID',      example: '39452' },
-      { key: '{{summary}}',             desc: '简介',              example: '在梦想与希望…' },
-      { key: '{{tags_yaml}}',           desc: 'tags 列表（YAML）', example: '  - bangumi\n  - bgm/科幻' },
-      { key: '{{related_series}}',      desc: '所属系列名称',      example: '游戏人生' },
-      { key: '{{related_series_link}}', desc: '所属系列 Wiki 内链', example: '[[游戏人生]]' },
-      { key: '{{netaba_iframe}}',       desc: 'Netaba 评分趋势 iframe（动画最有用）', example: '<iframe ...>' },
-      { key: '{{infobox_frontmatter}}', desc: 'infobox 所有字段（放在 --- frontmatter 里）', example: '导演: いしづかあつこ' },
-      { key: '{{infobox_table_rows}}',  desc: 'infobox 所有字段（放在 Markdown 表格里）', example: '| 导演 | いしづかあつこ |' },
+      { key: '{{title}}',               desc: '中文名',                                    example: '游戏人生' },
+      { key: '{{original_title}}',      desc: '原名（日文名）',                            example: 'ノーゲーム・ノーライフ' },
+      { key: '{{cover_local}}',         desc: '封面本地路径',                              example: 'ACG/Anime/_covers/游戏人生.jpg' },
+      { key: '{{today}}',               desc: '记录日期（今天）',                          example: '2026-05-19' },
+      { key: '{{score}}',               desc: 'BGM 评分',                                 example: '8.1' },
+      { key: '{{rank}}',                desc: 'BGM 排名',                                 example: '42' },
+      { key: '{{bangumi_url}}',         desc: 'BGM 链接',                                 example: 'https://bgm.tv/subject/39452' },
+      { key: '{{bangumi_id}}',          desc: 'BGM 条目 ID',                             example: '39452' },
+      { key: '{{summary}}',             desc: '简介',                                     example: '在梦想与希望…' },
+      { key: '{{tags_yaml}}',           desc: 'tags 列表（YAML 格式，放在 tags: 下面）',  example: '  - bangumi\n  - bgm/科幻' },
+      { key: '{{related_series}}',      desc: '所属系列名称',                             example: '游戏人生' },
+      { key: '{{related_series_link}}', desc: '所属系列 Wiki 内链',                       example: '[[游戏人生]]' },
+      { key: '{{netaba_iframe}}',       desc: 'Netaba 评分趋势嵌入 iframe',               example: '<iframe ...>' },
+      { key: '{{infobox_frontmatter}}', desc: 'infobox 全部字段展开为 YAML（放 --- 里）', example: '导演: いしづかあつこ' },
+      { key: '{{infobox_table_rows}}',  desc: 'infobox 全部字段展开为表格行',             example: '| 导演 | いしづかあつこ |' },
     ],
   },
   {
@@ -46,9 +45,9 @@ const PLACEHOLDER_GROUPS: {
     label: '书籍专属',
     types: ['book'],
     items: [
-      { key: '{{author}}',    desc: '作者（从 infobox 提取）',  example: '榎宫祐' },
+      { key: '{{author}}',    desc: '作者（从 infobox 提取）',   example: '榎宫祐' },
       { key: '{{publisher}}', desc: '出版社（从 infobox 提取）', example: 'KADOKAWA' },
-      { key: '{{volumes}}',   desc: '册数（从 infobox 提取）',  example: '10' },
+      { key: '{{volumes}}',   desc: '册数（从 infobox 提取）',   example: '10' },
     ],
   },
   {
@@ -83,7 +82,7 @@ export class BangumiSettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.createEl('h2', { text: 'Bangumi 插件设置' });
 
-    // ── 通用设置 ──────────────────────────────────────────────
+    // Token
     new Setting(containerEl)
       .setName('Bangumi Access Token')
       .setDesc('在 bgm.tv → 开发者设置 中生成，不填也能搜索')
@@ -95,9 +94,10 @@ export class BangumiSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    // 视频根目录 + toggle 联动
-    let videoDirText: any;
-    const videoSetting = new Setting(containerEl)
+    // 视频根目录
+    let inputEl: HTMLInputElement | null = null;
+
+    new Setting(containerEl)
       .setName('本地视频根目录')
       .setDesc('开启后，创建笔记时同步在此目录下建立同名文件夹')
       .addToggle(tog => tog
@@ -105,60 +105,44 @@ export class BangumiSettingTab extends PluginSettingTab {
         .onChange(async v => {
           this.plugin.settings.createVideoDir = v;
           await this.plugin.saveSettings();
-          if (videoDirText) {
-            videoDirText.inputEl.closest('.setting-item-control').style.display = v ? '' : 'none';
-          }
+          if (inputEl) inputEl.style.display = v ? 'inline-block' : 'none';
         }))
       .addText(t => {
-        videoDirText = t;
         t.setPlaceholder('D:/Videos/Anime')
           .setValue(this.plugin.settings.videoRootDir)
           .onChange(async v => {
             this.plugin.settings.videoRootDir = v;
             await this.plugin.saveSettings();
           });
-        // 初始状态联动
-        setTimeout(() => {
-          const ctrl = t.inputEl.parentElement;
-          if (ctrl) ctrl.style.display = this.plugin.settings.createVideoDir ? '' : 'none';
-        }, 0);
-        return t;
+        inputEl = t.inputEl;
+        inputEl.style.display = this.plugin.settings.createVideoDir ? 'inline-block' : 'none';
       });
 
     containerEl.createEl('h3', { text: '分类设置' });
 
-    // ── Tab 栏 ────────────────────────────────────────────────
-    const tabBar = containerEl.createEl('div');
-    tabBar.style.cssText = 'display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--background-modifier-border);padding-bottom:8px;flex-wrap:wrap;';
-
+    // Tab 栏
+    const tabBar = containerEl.createEl('div', { cls: 'bangumi-tab-bar' });
     const tabBtns = {} as Record<SubjectTypeKey, HTMLButtonElement>;
     const contentArea = containerEl.createEl('div');
 
     TYPE_KEYS.forEach(key => {
-      const btn = tabBar.createEl('button', { text: SUBJECT_TYPE_LABEL[key] });
-      btn.style.cssText = 'padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:13px;';
+      const btn = tabBar.createEl('button', { text: SUBJECT_TYPE_LABEL[key], cls: 'bangumi-tab-btn' });
       btn.addEventListener('click', () => {
         this.activeTab = key;
-        TYPE_KEYS.forEach(k => this.styleTabBtn(tabBtns[k], k === key));
+        TYPE_KEYS.forEach(k => tabBtns[k].classList.toggle('active', k === key));
         this.renderTabContent(contentArea, key);
       });
       tabBtns[key] = btn;
     });
 
-    TYPE_KEYS.forEach(k => this.styleTabBtn(tabBtns[k], k === this.activeTab));
+    tabBtns[this.activeTab].classList.add('active');
     this.renderTabContent(contentArea, this.activeTab);
   }
 
-  styleTabBtn(btn: HTMLButtonElement, active: boolean) {
-    btn.style.backgroundColor = active ? 'var(--interactive-accent)' : 'var(--background-secondary)';
-    btn.style.color = active ? 'var(--text-on-accent)' : '';
-  }
-
-  renderTabContent(container: HTMLElement, key: SubjectTypeKey) {
+  private renderTabContent(container: HTMLElement, key: SubjectTypeKey) {
     container.empty();
     const config = this.plugin.settings.subjectTypes[key];
 
-    // 归档根路径
     new Setting(container)
       .setName('归档根路径')
       .setDesc('笔记存放的根文件夹')
@@ -170,7 +154,6 @@ export class BangumiSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    // 归档方式
     new Setting(container)
       .setName('归档方式')
       .setDesc('按季度：.../2026/01月新番/　按年份：.../2026/　不归档：直接放根路径')
@@ -184,7 +167,6 @@ export class BangumiSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    // 封面路径
     new Setting(container)
       .setName('封面保存路径')
       .setDesc('封面图片在库中的存放路径')
@@ -196,7 +178,6 @@ export class BangumiSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    // 覆盖策略
     new Setting(container)
       .setName('覆盖策略')
       .setDesc('笔记已存在时的处理方式')
@@ -210,7 +191,6 @@ export class BangumiSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    // 模板来源
     new Setting(container)
       .setName('模板来源')
       .addDropdown(d => d
@@ -223,7 +203,6 @@ export class BangumiSettingTab extends PluginSettingTab {
           this.renderTabContent(container, key);
         }));
 
-    // 模板文件路径（仅在选了 file 时显示）
     if (config.templateSource === 'file') {
       new Setting(container)
         .setName('模板文件路径')
@@ -236,98 +215,66 @@ export class BangumiSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }))
         .addButton(btn => btn
-          .setButtonText('📋 复制默认模板')
-          .setTooltip('将默认模板内容复制到剪贴板，粘贴到你的模板文件中')
+          .setButtonText('复制默认模板')
+          .setTooltip('复制到剪贴板，粘贴到模板文件中修改')
           .onClick(() => {
             navigator.clipboard.writeText(DEFAULT_TEMPLATES[key]);
-            new Notice('✅ 默认模板已复制到剪贴板');
+            new Notice('✅ 默认模板已复制');
           }));
     }
 
-    // 占位符参考（按分组，只显示当前类型相关的）
-container.createEl('h4', { text: '占位符参考' }).style.marginTop = '20px';
+    // 占位符参考
+    container.createEl('h4', { text: '占位符参考' });
+    const table = container.createEl('div', { cls: 'bangumi-placeholder-table' });
 
-const refWrap = container.createEl('div');
-refWrap.style.cssText = 'border:1px solid var(--background-modifier-border);border-radius:8px;overflow:hidden;margin-bottom:16px;';
+    const relevantGroups = PLACEHOLDER_GROUPS.filter(g =>
+      g.types === 'all' || (g.types as SubjectTypeKey[]).includes(key)
+    );
 
-const relevantGroups = PLACEHOLDER_GROUPS.filter(g =>
-  g.types === 'all' || (g.types as SubjectTypeKey[]).includes(key)
-);
+    let rowIndex = 0;
+    relevantGroups.forEach((group, gi) => {
+      const header = table.createEl('div', { text: group.label, cls: 'bangumi-placeholder-group-header' });
+      if (gi === 0) header.style.borderTop = 'none';
 
-let rowIndex = 0;
-relevantGroups.forEach((group, gi) => {
-  // 分组标题
-  const groupHeader = refWrap.createEl('div');
-  groupHeader.style.cssText = `
-    padding:6px 12px;
-    font-size:11px;
-    font-weight:600;
-    letter-spacing:0.05em;
-    text-transform:uppercase;
-    color:var(--text-muted);
-    background:var(--background-modifier-border);
-    border-top:${gi === 0 ? 'none' : '1px solid var(--background-modifier-border)'};
-  `;
-  groupHeader.setText(group.label);
+      group.items.forEach(p => {
+        const row = table.createEl('div', { cls: `bangumi-placeholder-row ${rowIndex % 2 === 0 ? 'even' : 'odd'}` });
+        rowIndex++;
 
-  group.items.forEach(p => {
-    const row = refWrap.createEl('div');
-    row.style.cssText = `
-      display:grid;
-      grid-template-columns:200px 1fr;
-      padding:7px 12px;
-      font-size:12px;
-      line-height:1.5;
-      border-top:1px solid var(--background-modifier-border);
-      background:${rowIndex % 2 === 0 ? 'var(--background-primary)' : 'var(--background-secondary)'};
-    `;
-    rowIndex++;
+        const left = row.createEl('div', { cls: 'bangumi-placeholder-left' });
+        const code = left.createEl('code', { text: p.key, cls: 'bangumi-placeholder-code' });
+        code.title = '点击复制';
+        code.addEventListener('click', () => {
+          navigator.clipboard.writeText(p.key);
+          code.classList.add('copied');
+          code.setText('已复制！');
+          setTimeout(() => {
+            code.classList.remove('copied');
+            code.setText(p.key);
+          }, 1200);
+        });
 
-    // 左列：点击复制的 code tag
-    const left = row.createEl('div');
-    left.style.cssText = 'display:flex;align-items:flex-start;padding-top:2px;';
-    const code = left.createEl('code', { text: p.key });
-    code.style.cssText = 'font-size:11px;background:var(--background-modifier-border);padding:2px 6px;border-radius:3px;cursor:pointer;white-space:nowrap;user-select:none;';
-    code.title = '点击复制';
-    code.addEventListener('click', () => {
-      navigator.clipboard.writeText(p.key);
-      code.style.background = 'var(--interactive-accent)';
-      code.style.color = 'var(--text-on-accent)';
-      code.setText('已复制！');
-      setTimeout(() => {
-        code.style.background = 'var(--background-modifier-border)';
-        code.style.color = '';
-        code.setText(p.key);
-      }, 1200);
+        const right = row.createEl('div');
+        right.createEl('div', { text: p.desc, cls: 'bangumi-placeholder-desc' });
+        right.createEl('div', { text: `示例：${p.example}`, cls: 'bangumi-placeholder-example' });
+      });
     });
 
-    // 右列：说明 + 示例
-    const right = row.createEl('div');
-    right.createEl('div', { text: p.desc });
-    right.createEl('div', { text: `示例：${p.example}` })
-      .style.cssText = 'color:var(--text-muted);font-size:11px;margin-top:1px;white-space:pre-wrap;word-break:break-all;';
-  });
-});
-
-    // ── 默认模板预览（只读）──────────────────────────────────
-    const previewHeader = container.createEl('div');
-    previewHeader.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;';
-    previewHeader.createEl('h4', { text: '默认模板' }).style.margin = '0';
-
-    const copyBtn = previewHeader.createEl('button', { text: '📋 复制模板' });
-    copyBtn.style.cssText = 'padding:4px 10px;border-radius:4px;border:1px solid var(--background-modifier-border);cursor:pointer;font-size:12px;';
+    // 默认模板预览
+    const previewHeader = container.createEl('div', { cls: 'bangumi-template-header' });
+    previewHeader.createEl('h4', { text: '默认模板' });
+    const copyBtn = previewHeader.createEl('button', { text: '📋 复制模板', cls: 'bangumi-copy-btn' });
     copyBtn.addEventListener('click', () => {
       navigator.clipboard.writeText(DEFAULT_TEMPLATES[key]);
-      new Notice('✅ 默认模板已复制到剪贴板');
+      new Notice('✅ 已复制到剪贴板');
     });
 
-    const textarea = container.createEl('textarea');
+    const textarea = container.createEl('textarea', { cls: 'bangumi-template-textarea' });
     textarea.value = DEFAULT_TEMPLATES[key];
     textarea.readOnly = true;
-    textarea.style.cssText = 'width:100%;height:260px;font-family:monospace;font-size:11px;padding:8px;box-sizing:border-box;resize:vertical;opacity:0.75;';
 
     container.createEl('p', {
       text: '如需自定义：选择「使用库中的模板文件」→ 复制默认模板 → 粘贴到模板文件中修改。',
-    }).style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:6px;';
+      cls: 'bangumi-template-hint',
+    });
   }
 }
