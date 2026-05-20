@@ -181,6 +181,7 @@ export class BangumiSettingTab extends PluginSettingTab {
     const config  = this.plugin.settings.subjectTypes[key];
     const defaults = DEFAULT_SETTINGS.subjectTypes[key];
 
+    // 归档根路径
     new Setting(container)
       .setName('归档根路径')
       .setDesc(this.getArchiveDesc(key))
@@ -220,6 +221,7 @@ export class BangumiSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    // 覆盖策略
     new Setting(container)
       .setName('覆盖策略')
       .setDesc('笔记已存在时的处理方式')
@@ -233,6 +235,7 @@ export class BangumiSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    // 模板来源
     new Setting(container)
       .setName('模板来源')
       .addDropdown(d => d
@@ -262,7 +265,7 @@ export class BangumiSettingTab extends PluginSettingTab {
           .setTooltip('复制到剪贴板后粘贴到模板文件里修改')
           .onClick(() => {
             navigator.clipboard.writeText(DEFAULT_TEMPLATES[key]);
-            new Notice('✅ 默认模板已复制');
+            new Notice('✅ 默认模板已复制到剪贴板');
           }));
     }
 
