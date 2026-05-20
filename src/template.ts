@@ -267,6 +267,8 @@ export function buildTemplateVars(
   };
 }
 
+// ── 模板渲染 ────────────────────────────────────────────────────
+
 export async function resolveTemplate(
   app: App,
   typeKey: SubjectTypeKey,
