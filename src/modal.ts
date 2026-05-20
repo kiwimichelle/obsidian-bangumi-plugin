@@ -579,8 +579,6 @@ class AdaptationModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-// ── 确认弹窗 ────────────────────────────────────────────────────
-
 class ConfirmModal extends Modal {
   constructor(
     app: App,

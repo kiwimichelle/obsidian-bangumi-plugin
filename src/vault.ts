@@ -200,7 +200,7 @@ function extractSection(content: string, heading: string): string {
   const start = content.indexOf(heading);
   if (start === -1) return '';
   const afterHeading = content.indexOf('\n', start) + 1;
-  const nextHeading  = content.indexOf('\n# ', afterHeading);
+  const nextHeading = content.indexOf('\n# ', afterHeading);
   const end = nextHeading === -1 ? content.length : nextHeading;
   return content.slice(afterHeading, end).trim();
 }
@@ -362,8 +362,6 @@ export async function writeFrontmatter(
   }
 }
 
-// ── 工具 ────────────────────────────────────────────────────────
-
 export async function ensureFolder(app: App, folderPath: string): Promise<void> {
   const parts = folderPath.split('/').filter(Boolean);
   let current = '';
@@ -376,4 +374,65 @@ export async function ensureFolder(app: App, folderPath: string): Promise<void> 
       throw new Error(`路径 ${current} 已被文件占用`);
     }
   }
+}
+export async function writeFrontmatter(
+  app: App,
+  file: TFile,
+  detail: any,
+  infobox: InfoboxEntry[],
+  vars: import('./template').TemplateVars,
+  typeKey: SubjectTypeKey,
+  coverLocal: string,
+): Promise<void> {
+  const INFOBOX_EXCLUDE = ['tags', 'Tags', '标签', 'tag', '中文名', '日文名'];
+
+  await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    // 固定字段
+    fm['中文名']   = vars.title;
+    fm['日文名']   = vars.original_title;
+    fm['cover']    = coverLocal;
+    fm['BGM链接']  = vars.bangumi_url;
+    fm['BGM评分']  = vars.score;
+    fm['bangumi_id'] = vars.bangumi_id;
+    fm['记录日期'] = vars.today;
+
+    // 分类专属
+    if (typeKey === 'anime') {
+      fm['改编类型'] = vars.adaptation;
+      fm['总集数']   = vars.eps_count;
+      fm['开播年份'] = vars.year;
+      fm['开播季度'] = vars.season;
+      if (vars.related_series) fm['所属系列'] = `[[${vars.related_series}]]`;
+    }
+    if (typeKey === 'book') {
+      if (vars.author)    fm['作者']   = vars.author;
+      if (vars.publisher) fm['出版社'] = vars.publisher;
+      if (vars.volumes)   fm['册数']   = vars.volumes;
+    }
+    if (typeKey === 'game') {
+      if (vars.developer) fm['开发商'] = vars.developer;
+      if (vars.platform)  fm['平台']   = vars.platform;
+    }
+    if (typeKey === 'music') {
+      if (vars.artist)      fm['艺术家'] = vars.artist;
+      if (vars.track_count) fm['曲目数'] = vars.track_count;
+    }
+
+    // infobox 所有字段（Obsidian 自动处理转义）
+    for (const entry of infobox) {
+      if (!INFOBOX_EXCLUDE.includes(entry.key)) {
+        fm[entry.key] = entry.value;
+      }
+    }
+
+    // tags
+    const tags: string[] = ['bangumi'];
+    for (const t of (detail.tags ?? [])) {
+      tags.push(`bgm/${String(t.name)}`);
+    }
+    const existing: string[] = Array.isArray(fm['tags'])
+      ? (fm['tags'] as string[])
+      : [];
+    fm['tags'] = Array.from(new Set([...existing, ...tags]));
+  });
 }
