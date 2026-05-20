@@ -31,6 +31,7 @@ export default class BangumiPlugin extends Plugin {
       name: '搜索条目',
       callback: () => new BangumiSearchModal(this.app, this.settings).open(),
     });
+
     this.addSettingTab(new BangumiSettingTab(this.app, this));
   }
 
