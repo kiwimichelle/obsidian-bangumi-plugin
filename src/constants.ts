@@ -16,6 +16,33 @@ export const SUBJECT_TYPE_LABEL: Record<SubjectTypeKey, string> = {
   real:  '三次元',
 };
 
+// 各分类状态词
+export const STATUS_OPTIONS: Record<SubjectTypeKey, string[]> = {
+  anime: ['想看', '在看', '看过', '搁置', '抛弃'],
+  book:  ['想读', '在读', '已读', '搁置', '抛弃'],
+  game:  ['想玩', '在玩', '玩过', '搁置', '抛弃'],
+  music: ['想听', '在听', '听过'],
+  real:  ['想看', '在看', '看过', '搁置', '抛弃'],
+};
+
+// 书籍阅读渠道
+export const BOOK_CHANNELS = [
+  '哔哩哔哩漫画', '微信读书', '动漫之家',
+  'Kindle', 'BookWalker', '实体书', '其他',
+];
+
+// 书籍翻译版本
+export const BOOK_VERSIONS = [
+  '官方正版汉化', '民间汉化组版',
+  '台版繁体', '港版繁体', '原版日文', '其他',
+];
+
+// 收听平台
+export const MUSIC_SOURCES = [
+  'Spotify', '网易云音乐', 'Apple Music',
+  'QQ音乐', 'YouTube Music', '其他',
+];
+
 export const TYPE_FILTERS = [
   { label: '全部',   value: 0 },
   { label: '动画',   value: 2 },
@@ -26,3 +53,11 @@ export const TYPE_FILTERS = [
 ];
 
 export const TYPE_KEYS: SubjectTypeKey[] = ['anime', 'book', 'game', 'music', 'real'];
+
+// 书系关键词 → 轻小说判断
+export const LIGHTNOVEL_SERIES_KEYWORDS = [
+  'MF文庫', '電撃文庫', 'ファンタジア文庫', 'GA文庫',
+  'HJ文庫', 'オーバーラップ文庫', 'レジェンドノベルス',
+  'カドカワBOOKS', 'アース・スター', 'ヒーロー文庫',
+  'モンスター文庫', 'Kラノベブックス', 'ダッシュエックス文庫',
+];

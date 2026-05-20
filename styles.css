@@ -14,6 +14,7 @@
   font-size: 13px;
   background: transparent;
   color: var(--text-normal);
+  transition: background 0.15s, color 0.15s;
 }
 
 .bangumi-filter-btn.active {
@@ -27,6 +28,10 @@
   margin-bottom: 8px;
   font-size: 14px;
   box-sizing: border-box;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-modifier-form-field);
+  color: var(--text-normal);
 }
 
 .bangumi-status {
@@ -34,6 +39,13 @@
   color: var(--text-muted);
   font-size: 13px;
   min-height: 24px;
+  margin-bottom: 4px;
+}
+
+/* ── 搜索结果 ─────────────────────────────────────── */
+.bangumi-results {
+  max-height: 380px;
+  overflow-y: auto;
 }
 
 .bangumi-result-row {
@@ -42,8 +54,9 @@
   padding: 8px;
   cursor: pointer;
   border-radius: 6px;
-  gap: 12px;
-  transition: background 0.15s;
+  margin-bottom: 2px;
+  gap: 10px;
+  transition: background 0.12s;
 }
 
 .bangumi-result-row:hover {
@@ -51,40 +64,75 @@
 }
 
 .bangumi-result-cover {
-  width: 42px;
-  height: 60px;
+  width: 40px;
+  height: 56px;
   object-fit: cover;
-  border-radius: 4px;
-  background: var(--background-secondary);
+  border-radius: 3px;
   flex-shrink: 0;
+  background: var(--background-secondary);
 }
 
 .bangumi-result-info {
-  flex-grow: 1;
+  flex: 1;
   min-width: 0;
 }
 
 .bangumi-result-title {
-  font-weight: bold;
+  font-weight: 600;
   font-size: 14px;
-  color: var(--text-normal);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.bangumi-result-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bangumi-result-meta {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
-/* ── 个人评价及交互弹窗 ───────────────────────────────── */
+/* ── 分页 ─────────────────────────────────────────── */
+.bangumi-pagination-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 0 4px;
+}
+
+.bangumi-page-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  font-size: 13px;
+  background: transparent;
+  color: var(--text-normal);
+}
+
+.bangumi-page-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.bangumi-page-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ── 主观输入弹窗 ─────────────────────────────────── */
 .bangumi-input-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: 5px;
+  margin-bottom: 12px;
 }
 
 .bangumi-input-row label {
@@ -94,7 +142,7 @@
 }
 
 .bangumi-input-row select,
-.bangumi-input-row input[type="number"],
+.bangumi-input-row input,
 .bangumi-input-row textarea {
   width: 100%;
   padding: 6px 10px;
@@ -107,74 +155,133 @@
 }
 
 .bangumi-input-row textarea {
-  height: 90px;
-  resize: none;
+  height: 80px;
+  resize: vertical;
+  font-family: inherit;
 }
 
+/* ── 确认/操作按钮行 ──────────────────────────────── */
 .bangumi-confirm-btns {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 16px;
+  flex-wrap: wrap;
 }
 
 .bangumi-confirm-ok {
-  background: var(--interactive-accent) !important;
-  color: var(--text-on-accent) !important;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
 }
 
-/* ── 设置面板占位符提示 ──────────────────────────────── */
-.bangumi-settings-placeholder-box {
+.bangumi-confirm-ok:hover {
+  opacity: 0.9;
+}
+
+/* ── 改编类型选择 ─────────────────────────────────── */
+.bangumi-adaptation-desc {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.bangumi-adaptation-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bangumi-adaptation-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  font-size: 14px;
+  background: transparent;
+  color: var(--text-normal);
+  transition: background 0.15s, color 0.15s;
+}
+
+.bangumi-adaptation-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* ── 设置页 Tab ───────────────────────────────────── */
+.bangumi-tab-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.bangumi-tab-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  transition: background 0.15s, color 0.15s;
+}
+
+.bangumi-tab-btn.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* ── 占位符参考表 ─────────────────────────────────── */
+.bangumi-placeholder-table {
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
-  padding: 12px;
-  margin-top: 10px;
-  background: var(--background-secondary);
-}
-
-.bangumi-placeholder-group {
-  margin-bottom: 16px;
-}
-
-.bangumi-placeholder-group:last-child {
-  margin-bottom: 0;
-}
-
-.bangumi-placeholder-group-title {
+  overflow: hidden;
+  margin-bottom: 20px;
   font-size: 12px;
-  font-weight: bold;
-  color: var(--text-accent);
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
-  padding-bottom: 4px;
+}
+
+.bangumi-placeholder-group-header {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  border-top: 1px solid var(--background-modifier-border);
 }
 
 .bangumi-placeholder-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 6px 0;
-  border-bottom: 1px dashed var(--background-modifier-border);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  padding: 6px 12px;
+  line-height: 1.5;
+  border-top: 1px solid var(--background-modifier-border);
 }
 
-.bangumi-placeholder-row:last-child {
-  border-bottom: none;
-}
+.bangumi-placeholder-row.even { background: var(--background-primary); }
+.bangumi-placeholder-row.odd  { background: var(--background-secondary); }
 
 .bangumi-placeholder-left {
-  width: 160px;
-  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
 }
 
 .bangumi-placeholder-code {
-  display: inline-block;
   font-family: var(--font-monospace);
-  font-size: 12px;
-  color: var(--text-accent);
-  background: var(--background-primary);
+  font-size: 11px;
+  background: var(--background-modifier-border);
   padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px;
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
@@ -193,6 +300,7 @@
 
 .bangumi-placeholder-desc {
   color: var(--text-normal);
+  font-size: 12px;
 }
 
 .bangumi-placeholder-example {
@@ -208,7 +316,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin: 16px 0 8px;
 }
 
 .bangumi-template-header h4 {
@@ -221,12 +329,31 @@
   border: 1px solid var(--background-modifier-border);
   cursor: pointer;
   font-size: 12px;
-  background: var(--background-primary);
+  background: transparent;
+  color: var(--text-normal);
 }
 
-/* Bangumi 动画改编类型选择器弹窗按钮排版 */
-.bangumi-confirm-btns.bangumi-adaptation-wrapper {
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
+.bangumi-copy-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.bangumi-template-textarea {
+  width: 100%;
+  height: 260px;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  padding: 8px;
+  box-sizing: border-box;
+  resize: vertical;
+  opacity: 0.75;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.bangumi-template-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
 }

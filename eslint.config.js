@@ -5,11 +5,12 @@ import { globalIgnores } from "eslint/config";
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
-
+// 获取当前文件的目录路径（常用于配置 tsconfig 根路径）
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
 	{
+		// 针对所有文件或特定 TS 文件的语言选项配置
 		languageOptions: {
 			globals: {
 				...globals.browser,
@@ -27,9 +28,10 @@ export default tseslint.config(
 			},
 		},
 	},
-	// @ts-ignore
-	...(obsidianmd.configs.recommended as any[]),
+	// 引入 Obsidian 插件推荐的配置（已移除 TypeScript 类型断言）
+	...obsidianmd.configs.recommended,
 	{
+		// 规则覆盖与自定义配置
 		rules: {
 			'@typescript-eslint/no-explicit-any': 'off',
 			'@typescript-eslint/no-unsafe-assignment': 'off',
@@ -45,7 +47,6 @@ export default tseslint.config(
 			'no-useless-escape': 'off',
 			'no-console': 'off',
 			'no-restricted-globals': 'off',
-
 			'no-undef': 'off',
 			'import/no-nodejs-modules': 'off',
 			'obsidianmd/no-static-styles-assignment': 'off',
@@ -55,6 +56,7 @@ export default tseslint.config(
 			'obsidianmd/commands/no-plugin-name-in-command-name': 'off',
 		},
 	},
+	// 全局忽略路径配置
 	globalIgnores([
 		"node_modules",
 		"dist",
