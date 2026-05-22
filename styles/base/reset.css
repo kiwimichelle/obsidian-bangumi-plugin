@@ -1,0 +1,20 @@
+/**
+ * Reset – 仅重置插件内部的元素，不影响外部。
+ * 所有选择器必须带 .bgm-xxx 前缀。
+ */
+
+.bgm-plugin * {
+  box-sizing: border-box;
+}
+
+.bgm-plugin button,
+.bgm-plugin input,
+.bgm-plugin select,
+.bgm-plugin textarea {
+  font-family: inherit;
+  font-size: var(--bgm-font-size);
+}
+
+.bgm-plugin button {
+  cursor: pointer;
+}

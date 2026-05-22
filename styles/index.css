@@ -1,0 +1,13 @@
+/**
+ * Bangumi Plugin - Styles Entry
+ * 构建时合并此文件及其所有 @import 为单个 styles.css
+ */
+
+@import "base/variables.css";
+@import "base/reset.css";
+@import "components/modal.css";
+@import "components/search.css";
+@import "components/form.css";
+@import "components/progress.css";
+@import "views/settings.css";
+@import "views/onboarding.css";

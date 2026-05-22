@@ -1,0 +1,52 @@
+/**
+ * 设置页样式 (SettingTab)
+ */
+
+.bgm-settings-tab .setting-item {
+  border-top: none;
+  padding: var(--bgm-spacing-sm) 0;
+}
+
+.bgm-settings-tab h3 {
+  margin-top: var(--bgm-spacing-xl);
+  margin-bottom: var(--bgm-spacing-md);
+  border-bottom: 1px solid var(--bgm-border);
+  padding-bottom: var(--bgm-spacing-xs);
+}
+
+.bgm-settings-tab h4 {
+  margin: var(--bgm-spacing-lg) 0 var(--bgm-spacing-sm);
+}
+
+.bgm-index-status {
+  background: var(--bgm-bg-secondary);
+  padding: var(--bgm-spacing-md);
+  border-radius: var(--bgm-radius-md);
+  margin-bottom: var(--bgm-spacing-md);
+  font-size: var(--bgm-font-size-small);
+}
+
+.bgm-status-ok {
+  color: var(--bgm-accent);
+}
+
+.bgm-status-missing {
+  color: var(--bgm-text-error);
+}
+
+.bgm-settings-tab details {
+  margin-bottom: var(--bgm-spacing-lg);
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius-md);
+  padding: var(--bgm-spacing-md);
+}
+
+.bgm-settings-tab summary {
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bgm-settings-tab details > .setting-item {
+  padding-left: var(--bgm-spacing-lg);
+}

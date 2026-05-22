@@ -1,0 +1,27 @@
+/**
+ * 进度条组件 (IndexProgressModal)
+ */
+
+.bgm-index-progress-modal progress {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--bgm-radius-sm);
+  margin: var(--bgm-spacing-md) 0;
+}
+
+.bgm-index-progress-modal progress::-webkit-progress-bar {
+  background-color: var(--bgm-bg-modifier);
+  border-radius: var(--bgm-radius-sm);
+}
+
+.bgm-index-progress-modal progress::-webkit-progress-value {
+  background-color: var(--bgm-accent);
+  border-radius: var(--bgm-radius-sm);
+}
+
+.bgm-progress-status {
+  display: block;
+  margin: var(--bgm-spacing-md) 0;
+  font-size: var(--bgm-font-size);
+  text-align: center;
+}

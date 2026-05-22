@@ -1,0 +1,38 @@
+/**
+ * 通用弹窗样式 (Modal)
+ * 适用于 SearchModal, SubjectiveModal, OnboardingModal 等
+ */
+
+.bgm-search-modal,
+.bgm-subjective-modal,
+.bgm-onboarding-modal,
+.bgm-index-progress-modal {
+  min-width: 500px;
+  max-width: 80vw;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.bgm-search-modal h2,
+.bgm-subjective-modal h2,
+.bgm-onboarding-modal h2 {
+  margin-top: 0;
+  margin-bottom: var(--bgm-spacing-lg);
+  border-bottom: 1px solid var(--bgm-border);
+  padding-bottom: var(--bgm-spacing-sm);
+}
+
+.bgm-subjective-type-hint {
+  color: var(--bgm-text-muted);
+  font-size: var(--bgm-font-size-small);
+  margin-bottom: var(--bgm-spacing-lg);
+}
+
+.bgm-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--bgm-spacing-md);
+  margin-top: var(--bgm-spacing-xl);
+  padding-top: var(--bgm-spacing-md);
+  border-top: 1px solid var(--bgm-border);
+}

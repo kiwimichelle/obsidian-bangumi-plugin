@@ -1,0 +1,26 @@
+/**
+ * 表单组件样式 (用于 SubjectiveModal 等)
+ */
+
+.bgm-subjective-modal .setting-item {
+  border-top: none;
+  padding: var(--bgm-spacing-sm) 0;
+}
+
+.bgm-subjective-modal .setting-item-info {
+  flex: 1;
+}
+
+.bgm-subjective-modal .setting-item-control {
+  flex: 2;
+}
+
+.bgm-subjective-modal textarea {
+  min-height: 80px;
+  width: 100%;
+}
+
+.bgm-subjective-modal select,
+.bgm-subjective-modal input[type="text"] {
+  width: 100%;
+}

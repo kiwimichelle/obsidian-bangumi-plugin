@@ -1,359 +1,307 @@
-/* ── 搜索弹窗 ─────────────────────────────────────── */
-.bangumi-modal-filter-bar {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
+/**
+ * Bangumi Plugin - Styles Entry
+ * 构建时合并此文件及其所有 @import 为单个 styles.css
+ */
+
+/**
+ * Bangumi Plugin - CSS Variables
+ * 所有插件样式通过此处的变量引用主题值，避免直接使用 Obsidian 全局变量。
+ * 这样即使主题切换，只需修改变量映射，各组件样式自动适配。
+ */
+
+.bgm-plugin {
+  /* 颜色 - 映射到 Obsidian 主题变量 */
+  --bgm-accent: var(--interactive-accent);
+  --bgm-accent-hover: var(--interactive-accent-hover);
+  --bgm-text: var(--text-normal);
+  --bgm-text-muted: var(--text-muted);
+  --bgm-text-error: var(--text-error);
+  --bgm-bg: var(--background-primary);
+  --bgm-bg-secondary: var(--background-secondary);
+  --bgm-bg-modifier: var(--background-modifier-form-field);
+  --bgm-border: var(--background-modifier-border);
+  --bgm-border-focus: var(--interactive-accent);
+
+  /* 尺寸 */
+  --bgm-radius-sm: 4px;
+  --bgm-radius-md: 6px;
+  --bgm-radius-lg: 8px;
+  --bgm-spacing-xs: 4px;
+  --bgm-spacing-sm: 8px;
+  --bgm-spacing-md: 12px;
+  --bgm-spacing-lg: 16px;
+  --bgm-spacing-xl: 24px;
+
+  /* 字体 */
+  --bgm-font-size: var(--font-ui-size);
+  --bgm-font-size-small: calc(var(--font-ui-size) - 2px);
+  --bgm-font-size-large: calc(var(--font-ui-size) + 2px);
 }
 
-.bangumi-filter-btn {
-  padding: 4px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--background-modifier-border);
-  cursor: pointer;
-  font-size: 13px;
-  background: transparent;
-  color: var(--text-normal);
-  transition: background 0.15s, color 0.15s;
-}
+/**
+ * Reset – 仅重置插件内部的元素，不影响外部。
+ * 所有选择器必须带 .bgm-xxx 前缀。
+ */
 
-.bangumi-filter-btn.active {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
-.bangumi-search-input {
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 8px;
-  font-size: 14px;
+.bgm-plugin * {
   box-sizing: border-box;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  background: var(--background-modifier-form-field);
-  color: var(--text-normal);
 }
 
-.bangumi-status {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
-  min-height: 24px;
-  margin-bottom: 4px;
+.bgm-plugin button,
+.bgm-plugin input,
+.bgm-plugin select,
+.bgm-plugin textarea {
+  font-family: inherit;
+  font-size: var(--bgm-font-size);
 }
 
-/* ── 搜索结果 ─────────────────────────────────────── */
-.bangumi-results {
-  max-height: 380px;
+.bgm-plugin button {
+  cursor: pointer;
+}
+
+/**
+ * 通用弹窗样式 (Modal)
+ * 适用于 SearchModal, SubjectiveModal, OnboardingModal 等
+ */
+
+.bgm-search-modal,
+.bgm-subjective-modal,
+.bgm-onboarding-modal,
+.bgm-index-progress-modal {
+  min-width: 500px;
+  max-width: 80vw;
+  max-height: 80vh;
   overflow-y: auto;
 }
 
-.bangumi-result-row {
+.bgm-search-modal h2,
+.bgm-subjective-modal h2,
+.bgm-onboarding-modal h2 {
+  margin-top: 0;
+  margin-bottom: var(--bgm-spacing-lg);
+  border-bottom: 1px solid var(--bgm-border);
+  padding-bottom: var(--bgm-spacing-sm);
+}
+
+.bgm-subjective-type-hint {
+  color: var(--bgm-text-muted);
+  font-size: var(--bgm-font-size-small);
+  margin-bottom: var(--bgm-spacing-lg);
+}
+
+.bgm-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--bgm-spacing-md);
+  margin-top: var(--bgm-spacing-xl);
+  padding-top: var(--bgm-spacing-md);
+  border-top: 1px solid var(--bgm-border);
+}
+
+/**
+ * 搜索弹窗专用样式 (SearchModal)
+ */
+
+.bgm-search-row {
+  display: flex;
+  gap: var(--bgm-spacing-md);
+  margin-bottom: var(--bgm-spacing-lg);
+}
+
+.bgm-search-input-setting {
+  flex: 1;
+}
+
+.bgm-type-row {
   display: flex;
   align-items: center;
-  padding: 8px;
-  cursor: pointer;
-  border-radius: 6px;
-  margin-bottom: 2px;
-  gap: 10px;
-  transition: background 0.12s;
+  gap: var(--bgm-spacing-md);
+  margin-bottom: var(--bgm-spacing-lg);
 }
 
-.bangumi-result-row:hover {
-  background: var(--background-modifier-hover);
-}
-
-.bangumi-result-cover {
-  width: 40px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 3px;
-  flex-shrink: 0;
-  background: var(--background-secondary);
-}
-
-.bangumi-result-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.bangumi-result-title {
+.bgm-type-row label {
   font-weight: 600;
-  font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--bgm-text-muted);
 }
 
-.bangumi-result-subtitle {
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.bgm-search-status {
+  margin: var(--bgm-spacing-md) 0;
+  padding: var(--bgm-spacing-sm);
+  background: var(--bgm-bg-secondary);
+  border-radius: var(--bgm-radius-sm);
+  font-size: var(--bgm-font-size-small);
+  color: var(--bgm-text-muted);
 }
 
-.bangumi-result-meta {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 2px;
+.bgm-search-results {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius-md);
+  margin-bottom: var(--bgm-spacing-lg);
 }
 
-/* ── 分页 ─────────────────────────────────────────── */
-.bangumi-pagination-wrap {
+.bgm-search-result-item {
+  display: flex;
+  gap: var(--bgm-spacing-md);
+  padding: var(--bgm-spacing-md);
+  border-bottom: 1px solid var(--bgm-border);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.bgm-search-result-item:hover {
+  background: var(--bgm-bg-secondary);
+}
+
+.bgm-result-cover {
+  width: 60px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: var(--bgm-radius-sm);
+}
+
+.bgm-result-cover-placeholder {
+  width: 60px;
+  height: 84px;
+  background: var(--bgm-bg-modifier);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 10px 0 4px;
+  font-size: var(--bgm-font-size-small);
+  color: var(--bgm-text-muted);
+  border-radius: var(--bgm-radius-sm);
 }
 
-.bangumi-page-btn {
-  padding: 4px 12px;
-  border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
-  cursor: pointer;
-  font-size: 13px;
-  background: transparent;
-  color: var(--text-normal);
+.bgm-result-info {
+  flex: 1;
 }
 
-.bangumi-page-btn:hover {
-  background: var(--background-modifier-hover);
-}
-
-.bangumi-page-info {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-/* ── 主观输入弹窗 ─────────────────────────────────── */
-.bangumi-input-row {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-bottom: 12px;
-}
-
-.bangumi-input-row label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-normal);
-}
-
-.bangumi-input-row select,
-.bangumi-input-row input,
-.bangumi-input-row textarea {
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-modifier-form-field);
-  color: var(--text-normal);
-  font-size: 13px;
-  box-sizing: border-box;
-}
-
-.bangumi-input-row textarea {
-  height: 80px;
-  resize: vertical;
-  font-family: inherit;
-}
-
-/* ── 确认/操作按钮行 ──────────────────────────────── */
-.bangumi-confirm-btns {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-  flex-wrap: wrap;
-}
-
-.bangumi-confirm-ok {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border: none;
-  padding: 6px 16px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.bangumi-confirm-ok:hover {
-  opacity: 0.9;
-}
-
-/* ── 改编类型选择 ─────────────────────────────────── */
-.bangumi-adaptation-desc {
-  color: var(--text-muted);
-  font-size: 13px;
-  margin-bottom: 12px;
-}
-
-.bangumi-adaptation-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.bangumi-adaptation-btn {
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: 1px solid var(--background-modifier-border);
-  cursor: pointer;
-  font-size: 14px;
-  background: transparent;
-  color: var(--text-normal);
-  transition: background 0.15s, color 0.15s;
-}
-
-.bangumi-adaptation-btn:hover {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
-/* ── 设置页 Tab ───────────────────────────────────── */
-.bangumi-tab-bar {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--background-modifier-border);
-  padding-bottom: 8px;
-  flex-wrap: wrap;
-}
-
-.bangumi-tab-btn {
-  padding: 6px 14px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  transition: background 0.15s, color 0.15s;
-}
-
-.bangumi-tab-btn.active {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
-/* ── 占位符参考表 ─────────────────────────────────── */
-.bangumi-placeholder-table {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 20px;
-  font-size: 12px;
-}
-
-.bangumi-placeholder-group-header {
-  padding: 5px 12px;
-  font-size: 11px;
+.bgm-result-title {
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  background: var(--background-modifier-border);
-  border-top: 1px solid var(--background-modifier-border);
+  margin-bottom: var(--bgm-spacing-xs);
 }
 
-.bangumi-placeholder-row {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  padding: 6px 12px;
-  line-height: 1.5;
-  border-top: 1px solid var(--background-modifier-border);
+.bgm-result-meta {
+  font-size: var(--bgm-font-size-small);
+  color: var(--bgm-text-muted);
 }
 
-.bangumi-placeholder-row.even { background: var(--background-primary); }
-.bangumi-placeholder-row.odd  { background: var(--background-secondary); }
+.bgm-search-empty {
+  padding: var(--bgm-spacing-xl);
+  text-align: center;
+  color: var(--bgm-text-muted);
+}
 
-.bangumi-placeholder-left {
+.bgm-search-pagination {
   display: flex;
-  align-items: flex-start;
-  padding-top: 2px;
-}
-
-.bangumi-placeholder-code {
-  font-family: var(--font-monospace);
-  font-size: 11px;
-  background: var(--background-modifier-border);
-  padding: 2px 6px;
-  border-radius: 3px;
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-  transition: background 0.15s, color 0.15s;
-}
-
-.bangumi-placeholder-code:hover {
-  background: var(--interactive-accent-hover);
-  color: var(--text-on-accent);
-}
-
-.bangumi-placeholder-code.copied {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
-.bangumi-placeholder-desc {
-  color: var(--text-normal);
-  font-size: 12px;
-}
-
-.bangumi-placeholder-example {
-  color: var(--text-muted);
-  font-size: 11px;
-  margin-top: 1px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-/* ── 模板预览 ─────────────────────────────────────── */
-.bangumi-template-header {
-  display: flex;
+  justify-content: center;
   align-items: center;
-  justify-content: space-between;
-  margin: 16px 0 8px;
+  gap: var(--bgm-spacing-md);
+  margin-top: var(--bgm-spacing-lg);
 }
 
-.bangumi-template-header h4 {
-  margin: 0;
+.bgm-pagination-btn {
+  padding: var(--bgm-spacing-xs) var(--bgm-spacing-md);
 }
 
-.bangumi-copy-btn {
-  padding: 4px 10px;
-  border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
-  cursor: pointer;
-  font-size: 12px;
-  background: transparent;
-  color: var(--text-normal);
+.bgm-page-info {
+  font-size: var(--bgm-font-size-small);
+  color: var(--bgm-text-muted);
 }
 
-.bangumi-copy-btn:hover {
-  background: var(--background-modifier-hover);
+/**
+ * 表单组件样式 (用于 SubjectiveModal 等)
+ */
+
+.bgm-subjective-modal .setting-item {
+  border-top: none;
+  padding: var(--bgm-spacing-sm) 0;
 }
 
-.bangumi-template-textarea {
+.bgm-subjective-modal .setting-item-info {
+  flex: 1;
+}
+
+.bgm-subjective-modal .setting-item-control {
+  flex: 2;
+}
+
+.bgm-subjective-modal textarea {
+  min-height: 80px;
   width: 100%;
-  height: 260px;
-  font-family: var(--font-monospace);
-  font-size: 11px;
-  padding: 8px;
-  box-sizing: border-box;
-  resize: vertical;
-  opacity: 0.75;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
 }
 
-.bangumi-template-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 6px;
+.bgm-subjective-modal select,
+.bgm-subjective-modal input[type="text"] {
+  width: 100%;
+}
+
+/**
+ * 设置页样式 (SettingTab)
+ */
+
+.bgm-settings-tab .setting-item {
+  border-top: none;
+  padding: var(--bgm-spacing-sm) 0;
+}
+
+.bgm-settings-tab h3 {
+  margin-top: var(--bgm-spacing-xl);
+  margin-bottom: var(--bgm-spacing-md);
+  border-bottom: 1px solid var(--bgm-border);
+  padding-bottom: var(--bgm-spacing-xs);
+}
+
+.bgm-settings-tab h4 {
+  margin: var(--bgm-spacing-lg) 0 var(--bgm-spacing-sm);
+}
+
+.bgm-index-status {
+  background: var(--bgm-bg-secondary);
+  padding: var(--bgm-spacing-md);
+  border-radius: var(--bgm-radius-md);
+  margin-bottom: var(--bgm-spacing-md);
+  font-size: var(--bgm-font-size-small);
+}
+
+.bgm-status-ok {
+  color: var(--bgm-accent);
+}
+
+.bgm-status-missing {
+  color: var(--bgm-text-error);
+}
+
+.bgm-settings-tab details {
+  margin-bottom: var(--bgm-spacing-lg);
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius-md);
+  padding: var(--bgm-spacing-md);
+}
+
+.bgm-settings-tab summary {
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bgm-settings-tab details > .setting-item {
+  padding-left: var(--bgm-spacing-lg);
+}
+
+/**
+ * 首次引导弹窗样式 (OnboardingModal)
+ */
+
+.bgm-onboarding-desc {
+  margin-bottom: var(--bgm-spacing-xl);
+  color: var(--bgm-text-muted);
+}
+
+.bgm-onboarding-hint {
+  margin-top: var(--bgm-spacing-xl);
+  font-size: var(--bgm-font-size-small);
+  color: var(--bgm-text-muted);
+  text-align: center;
 }
