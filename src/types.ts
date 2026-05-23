@@ -485,6 +485,7 @@ export interface SearchQuery {
   page: number;
   /** 每页结果数 */
   limit: number;
+  mode?: 'offline' | 'online';
 }
 
 /**

@@ -40,8 +40,8 @@ export class ProgressNotice {
 		// Notice 第二参数为 0 时不自动消失，方便我们手动控制
 		this.notice = new Notice('', timeoutMs);
 
-		// noticeEl 是 Notice 暴露的 HTMLElement
-		const el = this.notice.noticeEl;
+		// messageEl 是 Notice 暴露的 HTMLElement
+		const el = this.notice.messageEl;
 		this.textNode = document.createTextNode(initialMessage);
 		el.appendChild(this.textNode);
 	}

@@ -7,7 +7,6 @@ import type {
   RealSubjective,
   Subjective,
   SubjectData,
-  SubjectTypeKey,
   BookSubtype,
   GamePlatform,
 } from '../types';

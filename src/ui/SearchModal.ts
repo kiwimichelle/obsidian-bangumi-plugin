@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting } from 'obsidian';
+import { App, Modal, Notice } from 'obsidian';
 import type {
   BangumiSettings,
   SearchQuery,
@@ -181,7 +181,7 @@ export class SearchModal extends Modal {
     if (!kw || this.isLoading) return;
 
     this.isLoading = true;
-    this.renderResults(); // 渲染 Loading 状态
+    this.renderResults(); 
 
     try {
       const query: SearchQuery = {
@@ -191,9 +191,11 @@ export class SearchModal extends Modal {
         limit: DEFAULT_PAGE_SIZE,
       };
 
-      // 显式传入 currentMode 控制数据源
+      // ✅ 修复 1：这里正常传入两个参数。
+      // 第二个参数 this.currentMode 完美对齐 DataManager.ts 中的 forceMode?: 'offline' | 'online'
       const resp = await this.dataManager.search(query, this.currentMode);
       
+      // ✅ 修复 2：将旧代码的 resp.data 改为符合全新 SearchResponse 接口的 resp.list
       this.results = resp.list;
       this.totalResults = resp.total;
     } catch (err) {
