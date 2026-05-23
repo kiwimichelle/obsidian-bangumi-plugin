@@ -1,10 +1,9 @@
 import { App, TFile } from 'obsidian';
 import { BGM_WEB_BASE } from '../constants';
 import type {
-  AnimeSubjective, BookSubjective, GameSubjective,
-  MusicSubjective, RealSubjective,
   SubjectData, Subjective, SubjectTypeKey,
 } from '../types';
+import { buildSubjectiveFields } from './Subjectivemapper';
 
 // ─────────────────────────────────────────────
 // 常量
@@ -106,55 +105,4 @@ function setOrDelete(fm: Record<string, unknown>, key: string, value: unknown): 
 
 function buildTagsArray(tags: string[]): string[] {
   return ['bangumi', ...tags.map(t => `bgm/${t}`)];
-}
-
-function buildSubjectiveFields(
-  typeKey: SubjectTypeKey,
-  subjective: Subjective,
-): Record<string, string> {
-  const fields: Record<string, string> = {
-    my_status:  subjective.status,
-    my_rating:  (subjective as AnimeSubjective).rating  ?? '',
-    my_comment: (subjective as AnimeSubjective).comment ?? '',
-  };
-
-  switch (typeKey) {
-    case 'anime': {
-      const s = subjective as AnimeSubjective;
-      fields['my_progress'] = s.progress;
-      fields['my_source']   = s.source;
-      break;
-    }
-    case 'book': {
-      const s = subjective as BookSubjective;
-      fields['my_channel'] = s.channel;
-      fields['my_version'] = s.version;
-      const parts = [
-        s.volNum  ? `第${s.volNum}卷`  : '',
-        s.unitNum ? `第${s.unitNum}话` : '',
-      ].filter(Boolean);
-      fields['my_read_progress'] = parts.join(' / ');
-      break;
-    }
-    case 'game': {
-      const s = subjective as GameSubjective;
-      fields['my_hours']         = s.hours;
-      fields['my_platform']      = s.platform;
-      fields['my_game_progress'] = s.progress;
-      break;
-    }
-    case 'music': {
-      const s = subjective as MusicSubjective;
-      fields['my_music_source'] = s.source;
-      break;
-    }
-    case 'real': {
-      const s = subjective as RealSubjective;
-      fields['my_progress'] = s.progress;
-      fields['my_source']   = s.source;
-      break;
-    }
-  }
-
-  return fields;
 }

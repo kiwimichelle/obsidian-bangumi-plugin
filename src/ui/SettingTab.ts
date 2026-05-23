@@ -1,199 +1,222 @@
-import { App, PluginSettingTab, Setting, Platform } from 'obsidian';
-import type BangumiPlugin from '../main';
-import type { SubjectTypeKey, ArchiveMode, OverwriteMode, TemplateSource } from '../types';
-import { TYPE_KEYS, SUBJECT_TYPE_LABEL } from '../constants';
+import { App, Plugin, PluginSettingTab, Setting, Platform, Notice } from 'obsidian';
+import type { BangumiSettings, SubjectTypeKey, ArchiveMode, TemplateSource, OverwriteMode } from '../types';
+import { SUBJECT_TYPE_LABEL, DEFAULT_TEMPLATES } from '../constants';
+import { IndexProgressModal } from './IndexProgressModal';
+import { renderTemplate, buildPreviewVars } from '../note/TemplateEngine';
+import type { IndexBuilder } from '../core/IndexBuilder';
+import type { SearchIndexBuilder } from '../core/SearchIndexBuilder';
 
-/**
- * 插件设置选项卡
- * @see https://docs.obsidian.md/Reference/TypeScript+API/PluginSettingTab
- */
-export class SettingTab extends PluginSettingTab {
-  plugin: BangumiPlugin;
-
-  constructor(app: App, plugin: BangumiPlugin) {
+export class BangumiSettingTab extends PluginSettingTab {
+  constructor(
+    app: App,
+    plugin: Plugin,
+    private readonly getSettings: () => BangumiSettings,
+    private readonly saveSettings: () => Promise<void>,
+    private readonly indexBuilder: IndexBuilder,
+    private readonly searchIndexBuilder: SearchIndexBuilder
+  ) {
     super(app, plugin);
-    this.plugin = plugin;
   }
 
   display(): void {
     const { containerEl } = this;
+    const settings = this.getSettings();
     containerEl.empty();
-    containerEl.addClass('bgm-plugin', 'bgm-settings-tab');
+    containerEl.addClass('bgm-settings-container');
 
-    // 认证
-    new Setting(containerEl)
-      .setName('Bangumi Access Token')
-      .setDesc('用于同步收藏、评分等个人数据。获取方式：登录 bgm.tv → 个人设置 → API')
+    containerEl.createEl('h2', { text: 'Bangumi 插件设置', cls: 'bgm-settings-title' });
+
+    this.renderCoreSettings(containerEl, settings);
+    this.renderDatabaseDashboard(containerEl, settings);
+    this.renderCategorySettings(containerEl, settings);
+  }
+
+  private renderCoreSettings(container: HTMLElement, settings: BangumiSettings) {
+    container.createEl('h3', { text: '🌐 核心配置' });
+    new Setting(container)
+      .setName('Bangumi API Token')
+      .setDesc('用于访问用户私密信息或突破频率限制。可在 bgm.tv 设置页生成。')
       .addText(text => text
         .setPlaceholder('输入 Access Token')
-        .setValue(this.plugin.settings.token)
+        .setValue(settings.token)
         .onChange(async (value) => {
-          this.plugin.settings.token = value;
-          await this.plugin.saveSettings();
-        }));
+          settings.token = value.trim();
+          await this.saveSettings();
+        })
+      );
 
-    // 离线数据包
-    containerEl.createEl('h3', { text: '离线数据包' });
-    new Setting(containerEl)
-      .setName('离线数据库路径')
-      .setDesc('指向 bangumi.jsonl 文件的绝对路径或库内相对路径')
-      .addText(text => text
-        .setPlaceholder('例如：/data/bangumi.jsonl 或 bangumi-data/subject.jsonl')
-        .setValue(this.plugin.settings.offlineDbPath)
-        .onChange(async (value) => {
-          this.plugin.settings.offlineDbPath = value;
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
+    new Setting(container)
       .setName('优先使用离线模式')
+      .setDesc('开启后，搜索将优先从本地检索；关闭则直接请求在线 API。')
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.offlineMode)
+        .setValue(settings.offlineMode)
         .onChange(async (value) => {
-          this.plugin.settings.offlineMode = value;
-          await this.plugin.saveSettings();
-        }));
+          settings.offlineMode = value;
+          await this.saveSettings();
+          this.display(); // 刷新以展示/隐藏警告
+        })
+      );
+  }
 
-    containerEl.createEl('h4', { text: '索引管理' });
-    const indexStatusDiv = containerEl.createDiv({ cls: 'bgm-index-status' });
-    this.renderIndexStatus(indexStatusDiv);
-    new Setting(containerEl)
-      .addButton(btn => btn.setButtonText('重建行号索引').setCta().onClick(async () => this.plugin.rebuildIndex()))
-      .addButton(btn => btn.setButtonText('重建搜索索引').onClick(async () => this.plugin.rebuildSearchIndex()));
+  private renderDatabaseDashboard(container: HTMLElement, settings: BangumiSettings) {
+    container.createEl('h3', { text: '📦 离线检索库' });
+    const dashboard = container.createEl('div', { cls: 'bgm-dashboard-card' });
 
-    // 本地视频（仅桌面端）
+    // 系统路径输入（支持库外任意位置）
+    const fileSetting = new Setting(dashboard)
+      .setName('离线数据包路径 (.jsonl / .jsonlines)')
+      .setDesc('支持绝对路径或相对于 vault 根目录的路径。数据包体积较大，推荐存放在 vault 以外的任意目录。')
+      .addText(text => {
+        text.setPlaceholder('/Users/you/Downloads/subject.jsonlines')
+            .setValue(settings.offlineDbPath)
+            .onChange(async (val) => {
+              settings.offlineDbPath = val.trim();
+              await this.saveSettings();
+            });
+        text.inputEl.style.width = '100%';
+      });
+
+    // 桌面端：用 Electron 文件选择器浏览系统任意位置
     if (Platform.isDesktop) {
-      containerEl.createEl('h3', { text: '本地视频集成（桌面端）' });
-      new Setting(containerEl)
-        .setName('本地视频根目录')
-        .addText(text => text
-          .setPlaceholder('例如：D:/Videos/Anime')
-          .setValue(this.plugin.settings.videoRootDir)
-          .onChange(async (value) => {
-            this.plugin.settings.videoRootDir = value;
-            await this.plugin.saveSettings();
-          }));
-      new Setting(containerEl)
-        .setName('创建笔记时同步创建本地视频文件夹')
-        .addToggle(toggle => toggle
-          .setValue(this.plugin.settings.createVideoDir)
-          .onChange(async (value) => {
-            this.plugin.settings.createVideoDir = value;
-            await this.plugin.saveSettings();
-          }));
+      fileSetting.addButton(btn => btn
+        .setButtonText('📂 浏览…')
+        .onClick(() => {
+          try {
+             
+             
+            const { remote } = (window as any).require('electron');
+            const paths = remote.dialog.showOpenDialogSync(remote.getCurrentWindow(), {
+              title: '选择 Bangumi 离线数据包',
+              filters: [
+                { name: 'JSONL 数据包', extensions: ['jsonl', 'jsonlines', 'json'] },
+                { name: '所有文件', extensions: ['*'] },
+              ],
+              properties: ['openFile'],
+            });
+            if (paths && paths.length > 0) {
+              settings.offlineDbPath = paths[0]!;
+              void this.saveSettings().then(() => this.display());
+            }
+          } catch {
+            new Notice('⚠️ 文件选择器不可用，请手动粘贴完整路径。');
+          }
+        })
+      );
     }
 
-    // 分类配置
-    containerEl.createEl('h3', { text: '分类配置' });
-    for (const typeKey of TYPE_KEYS) {
-      this.renderTypeConfig(typeKey, containerEl);
-    }
+    const isReady = settings.offlineDbPath && settings.searchIndexBuiltAt > 0;
+    const statusRow = dashboard.createEl('div', { cls: 'bgm-dashboard-status' });
+    const indexDate = settings.indexBuiltAt 
+      ? new Date(settings.indexBuiltAt).toLocaleString() 
+      : '尚未构建';
+    statusRow.createEl('div', { text: `📊 索引状态：${isReady ? '✅ 已就绪' : '⚠️ 未完成'}`, cls: 'bgm-status-item' });
+    statusRow.createEl('div', { text: `⏱️ 最后构建：${indexDate}`, cls: 'bgm-status-item bgm-text-muted' });
+
+    new Setting(dashboard)
+      .setName('重建检索缓存')
+      .setDesc('当替换了新的数据包文件后，需要重新构建索引。')
+      .addButton(btn => btn
+        .setButtonText('🔄 立即构建')
+        .setCta()
+        .setDisabled(!settings.offlineDbPath)
+        .onClick(() => {
+          IndexProgressModal.buildAll(
+            this.app, 
+            settings.offlineDbPath, 
+            this.indexBuilder, 
+            this.searchIndexBuilder,
+            () => {
+              settings.indexBuiltAt = Date.now();
+              settings.searchIndexBuiltAt = Date.now();
+              this.saveSettings().then(() => this.display());
+            }
+          );
+        })
+      );
   }
 
-  private renderIndexStatus(container: HTMLElement): void {
-    const state = this.plugin.getState();
-    container.empty();
-    container.createSpan({
-      text: `行号索引: ${state.indexReady ? '✓ 已就绪' : '✗ 未就绪'}  |  `,
-      cls: state.indexReady ? 'bgm-status-ok' : 'bgm-status-missing',
-    });
-    container.createSpan({
-      text: `搜索索引: ${state.searchIndexReady ? '✓ 已就绪' : '✗ 未就绪'}`,
-      cls: state.searchIndexReady ? 'bgm-status-ok' : 'bgm-status-missing',
-    });
-    if (this.plugin.settings.indexBuiltAt > 0) {
-      const date = new Date(this.plugin.settings.indexBuiltAt).toLocaleString();
-      container.createEl('br');
-      container.createSpan({ text: `行号索引构建时间: ${date}` });
-    }
-    if (this.plugin.settings.searchIndexBuiltAt > 0) {
-      const date = new Date(this.plugin.settings.searchIndexBuiltAt).toLocaleString();
-      container.createEl('br');
-      container.createSpan({ text: `搜索索引构建时间: ${date}` });
-    }
-  }
+  private renderCategorySettings(container: HTMLElement, settings: BangumiSettings) {
+    container.createEl('h3', { text: '📂 分类归档与模板' });
+    const categories: SubjectTypeKey[] = ['anime', 'book', 'game', 'music', 'real'];
+    for (const type of categories) {
+      const config = settings.subjectTypes[type];
+      const details = container.createEl('details', { cls: 'bgm-category-details' });
+      details.createEl('summary', { text: `🏷️ ${SUBJECT_TYPE_LABEL[type]} 设置`, cls: 'bgm-category-summary' });
 
-  private renderTypeConfig(typeKey: SubjectTypeKey, container: HTMLElement): void {
-    const config = this.plugin.settings.subjectTypes[typeKey];
-    if (!config) return;
-
-    const details = container.createEl('details');
-    details.createEl('summary').setText(SUBJECT_TYPE_LABEL[typeKey]);
-
-    new Setting(details)
-      .setName('归档根目录')
-      .addText(text => text
-        .setPlaceholder(`例如：ACG/${SUBJECT_TYPE_LABEL[typeKey]}`)
-        .setValue(config.archiveRoot)
-        .onChange(async (value) => {
-          config.archiveRoot = value;
-          await this.plugin.saveSettings();
-        }));
-
-    if (typeKey === 'anime' || typeKey === 'real') {
       new Setting(details)
-        .setName('归档层级模式')
-        .addDropdown(dropdown => {
-          dropdown.addOption('season', '按季度 (年份/季度)');
-          dropdown.addOption('year', '按年份 (年份/)');
-          dropdown.addOption('flat', '平铺 (根目录)');
-          dropdown.setValue(config.archiveMode);
-          dropdown.onChange(async (value) => {
-            config.archiveMode = value as ArchiveMode;
-            await this.plugin.saveSettings();
-          });
-        });
-    }
-
-    new Setting(details)
-      .setName('封面图片路径')
-      .addText(text => text
-        .setPlaceholder('例如：assets/covers')
-        .setValue(config.coverPath)
-        .onChange(async (value) => {
-          config.coverPath = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(details)
-      .setName('模板来源')
-      .addDropdown(dropdown => {
-        dropdown.addOption('default', '使用内置默认模板');
-        dropdown.addOption('file', '使用自定义模板文件');
-        dropdown.setValue(config.templateSource);
-        dropdown.onChange(async (value) => {
-          config.templateSource = value as TemplateSource;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    if (config.templateSource === 'file') {
-      new Setting(details)
-        .setName('模板文件路径')
+        .setName('归档根目录')
         .addText(text => text
-          .setPlaceholder('templates/anime.md')
-          .setValue(config.templateFile)
-          .onChange(async (value) => {
-            config.templateFile = value;
-            await this.plugin.saveSettings();
-          }));
-    }
+          .setValue(config.archiveRoot)
+          .onChange(async (val) => {
+            config.archiveRoot = val.trim();
+            await this.saveSettings();
+          })
+        );
 
-    new Setting(details)
-      .setName('笔记已存在时的覆盖策略')
-      .addDropdown(dropdown => {
-        dropdown.addOption('ask', '每次询问');
-        dropdown.addOption('always', '总是覆盖');
-        dropdown.addOption('never', '从不覆盖（跳过）');
-        dropdown.setValue(config.overwriteMode);
-        dropdown.onChange(async (value) => {
-          config.overwriteMode = value as OverwriteMode;
-          await this.plugin.saveSettings();
-        });
+      if (['anime', 'real'].includes(type)) {
+        new Setting(details)
+          .setName('归档层级策略')
+          .addDropdown(drop => drop
+            .addOptions({ season: '年份/季度新番', year: '仅年份', flat: '无子目录' })
+            .setValue(config.archiveMode)
+            .onChange(async (val: string) => {
+              config.archiveMode = val as ArchiveMode;
+              await this.saveSettings();
+            })
+          );
+      }
+
+      new Setting(details)
+        .setName('模板来源')
+        .addDropdown(drop => drop
+          .addOptions({ default: '默认模板', file: '自定义模板文件' })
+          .setValue(config.templateSource)
+          .onChange(async (val: string) => {
+            config.templateSource = val as TemplateSource;
+            await this.saveSettings();
+            this.display();
+          })
+        );
+
+      if (config.templateSource === 'file') {
+        new Setting(details)
+          .setName('自定义模板路径')
+          .addText(text => text
+            .setValue(config.templateFile)
+            .onChange(async (val) => {
+              config.templateFile = val.trim();
+              await this.saveSettings();
+            })
+          );
+      }
+
+      new Setting(details)
+        .setName('同名冲突策略')
+        .addDropdown(drop => drop
+          .addOptions({ ask: '每次询问', always: '自动覆盖更新', never: '跳过不处理' })
+          .setValue(config.overwriteMode)
+          .onChange(async (val: string) => {
+            config.overwriteMode = val as OverwriteMode;
+            await this.saveSettings();
+          })
+        );
+
+      const previewBtn = details.createEl('button', { text: '👁️ 预览当前模板渲染效果', cls: 'bgm-preview-btn' });
+      const previewArea = details.createEl('pre', { cls: 'bgm-template-preview' });
+      previewArea.style.display = 'none';
+      previewBtn.addEventListener('click', async () => {
+        if (previewArea.style.display === 'none') {
+          const rawTemplate = config.templateSource === 'default' 
+            ? DEFAULT_TEMPLATES[type] 
+            : '（自定义模板需确保文件存在）\n\n' + DEFAULT_TEMPLATES[type];
+          previewArea.textContent = renderTemplate(rawTemplate, buildPreviewVars());
+          previewArea.style.display = 'block';
+          previewBtn.setText('收起预览');
+        } else {
+          previewArea.style.display = 'none';
+          previewBtn.setText('👁️ 预览当前模板渲染效果');
+        }
       });
-  }
-
-  refreshIndexStatus(): void {
-    const statusDiv = this.containerEl.querySelector('.bgm-index-status');
-    if (statusDiv) this.renderIndexStatus(statusDiv as HTMLElement);
+    }
   }
 }

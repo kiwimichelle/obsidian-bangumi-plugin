@@ -1,307 +1,334 @@
-/**
- * Bangumi Plugin - Styles Entry
- * 构建时合并此文件及其所有 @import 为单个 styles.css
- */
+/* ==========================================================================
+   Bangumi Obsidian Plugin - Styles
+   按照模块化设计，未来可拆分为 styles/ 目录下的多个文件并由 esbuild 聚合
+   ========================================================================== */
 
-/**
- * Bangumi Plugin - CSS Variables
- * 所有插件样式通过此处的变量引用主题值，避免直接使用 Obsidian 全局变量。
- * 这样即使主题切换，只需修改变量映射，各组件样式自动适配。
- */
-
-.bgm-plugin {
-  /* 颜色 - 映射到 Obsidian 主题变量 */
+/* ──────────────────────────────────────────────────────────────────────────
+   1. BASE: variables.css
+   插件内部变量定义，映射 Obsidian 原生变量，实现主题隔离与适配
+   ────────────────────────────────────────────────────────────────────────── */
+.theme-light, .theme-dark {
   --bgm-accent: var(--interactive-accent);
   --bgm-accent-hover: var(--interactive-accent-hover);
-  --bgm-text: var(--text-normal);
-  --bgm-text-muted: var(--text-muted);
-  --bgm-text-error: var(--text-error);
-  --bgm-bg: var(--background-primary);
-  --bgm-bg-secondary: var(--background-secondary);
-  --bgm-bg-modifier: var(--background-modifier-form-field);
   --bgm-border: var(--background-modifier-border);
-  --bgm-border-focus: var(--interactive-accent);
-
-  /* 尺寸 */
-  --bgm-radius-sm: 4px;
-  --bgm-radius-md: 6px;
-  --bgm-radius-lg: 8px;
+  --bgm-bg-form: var(--background-modifier-form-field);
+  --bgm-bg-primary: var(--background-primary);
+  --bgm-bg-secondary: var(--background-secondary);
+  --bgm-bg-hover: var(--background-modifier-hover);
+  --bgm-text-normal: var(--text-normal);
+  --bgm-text-muted: var(--text-muted);
+  --bgm-radius: 6px;
+  --bgm-radius-lg: 12px;
   --bgm-spacing-xs: 4px;
   --bgm-spacing-sm: 8px;
-  --bgm-spacing-md: 12px;
-  --bgm-spacing-lg: 16px;
-  --bgm-spacing-xl: 24px;
-
-  /* 字体 */
-  --bgm-font-size: var(--font-ui-size);
-  --bgm-font-size-small: calc(var(--font-ui-size) - 2px);
-  --bgm-font-size-large: calc(var(--font-ui-size) + 2px);
+  --bgm-spacing-md: 16px;
+  --bgm-spacing-lg: 24px;
 }
 
-/**
- * Reset – 仅重置插件内部的元素，不影响外部。
- * 所有选择器必须带 .bgm-xxx 前缀。
- */
+/* ──────────────────────────────────────────────────────────────────────────
+   2. COMPONENTS: form.css & button.css
+   通用表单项、按钮与布局
+   ────────────────────────────────────────────────────────────────────────── */
 
-.bgm-plugin * {
-  box-sizing: border-box;
+/* 通用输入行 (兼容 SubjectiveModal 和 OnboardingModal) */
+.bangumi-input-row,
+.bgm-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--bgm-spacing-sm);
+  margin-bottom: var(--bgm-spacing-md);
 }
 
-.bgm-plugin button,
-.bgm-plugin input,
-.bgm-plugin select,
-.bgm-plugin textarea {
-  font-family: inherit;
-  font-size: var(--bgm-font-size);
+.bangumi-input-row label {
+  width: 130px;
+  font-weight: 600;
+  color: var(--bgm-text-normal);
+  flex-shrink: 0;
 }
 
-.bgm-plugin button {
-  cursor: pointer;
+.bangumi-input-row input,
+.bangumi-input-row select,
+.bangumi-input-row textarea,
+.bgm-path-input {
+  flex: 1;
+  width: 100%;
+  background-color: var(--bgm-bg-form);
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius);
 }
 
-/**
- * 通用弹窗样式 (Modal)
- * 适用于 SearchModal, SubjectiveModal, OnboardingModal 等
- */
-
-.bgm-search-modal,
-.bgm-subjective-modal,
-.bgm-onboarding-modal,
-.bgm-index-progress-modal {
-  min-width: 500px;
-  max-width: 80vw;
-  max-height: 80vh;
-  overflow-y: auto;
+.bangumi-input-row textarea {
+  min-height: 80px;
+  resize: vertical;
 }
 
-.bgm-search-modal h2,
-.bgm-subjective-modal h2,
-.bgm-onboarding-modal h2 {
-  margin-top: 0;
-  margin-bottom: var(--bgm-spacing-lg);
-  border-bottom: 1px solid var(--bgm-border);
-  padding-bottom: var(--bgm-spacing-sm);
+/* 通用分隔线 */
+hr.bgm-divider {
+  border: none;
+  border-top: 1px solid var(--bgm-border);
+  margin: var(--bgm-spacing-lg) 0;
 }
 
-.bgm-subjective-type-hint {
-  color: var(--bgm-text-muted);
-  font-size: var(--bgm-font-size-small);
-  margin-bottom: var(--bgm-spacing-lg);
-}
-
-.bgm-modal-buttons {
+/* 按钮组对齐 */
+.bangumi-confirm-btns {
   display: flex;
   justify-content: flex-end;
-  gap: var(--bgm-spacing-md);
-  margin-top: var(--bgm-spacing-xl);
+  gap: var(--bgm-spacing-sm);
+  margin-top: var(--bgm-spacing-lg);
   padding-top: var(--bgm-spacing-md);
   border-top: 1px solid var(--bgm-border);
 }
 
-/**
- * 搜索弹窗专用样式 (SearchModal)
- */
-
-.bgm-search-row {
-  display: flex;
-  gap: var(--bgm-spacing-md);
-  margin-bottom: var(--bgm-spacing-lg);
+.bgm-full-width-btn {
+  width: 100%;
+  margin-top: var(--bgm-spacing-sm);
+  padding: 10px;
+  font-weight: bold;
 }
 
-.bgm-search-input-setting {
-  flex: 1;
-}
-
-.bgm-type-row {
-  display: flex;
-  align-items: center;
-  gap: var(--bgm-spacing-md);
-  margin-bottom: var(--bgm-spacing-lg);
-}
-
-.bgm-type-row label {
+/* 成功确认按钮增强 */
+.bangumi-confirm-ok {
+  background-color: var(--bgm-accent) !important;
+  color: var(--text-on-accent) !important;
   font-weight: 600;
-  color: var(--bgm-text-muted);
+}
+.bangumi-confirm-ok:hover {
+  background-color: var(--bgm-accent-hover) !important;
 }
 
-.bgm-search-status {
-  margin: var(--bgm-spacing-md) 0;
-  padding: var(--bgm-spacing-sm);
-  background: var(--bgm-bg-secondary);
-  border-radius: var(--bgm-radius-sm);
-  font-size: var(--bgm-font-size-small);
-  color: var(--bgm-text-muted);
+
+/* ──────────────────────────────────────────────────────────────────────────
+   3. VIEWS: search.css
+   搜索弹窗 (SearchModal) 专属样式
+   ────────────────────────────────────────────────────────────────────────── */
+
+.bangumi-search-modal {
+  display: flex;
+  flex-direction: column;
 }
 
-.bgm-search-results {
-  max-height: 400px;
+/* 模式切换器 */
+.bangumi-mode-switcher {
+  display: flex;
+  justify-content: center;
+  gap: var(--bgm-spacing-sm);
+  margin-bottom: var(--bgm-spacing-md);
+  padding-bottom: var(--bgm-spacing-sm);
+  border-bottom: 1px dashed var(--bgm-border);
+}
+
+/* 搜索结果列表 */
+.bangumi-search-results {
+  max-height: 50vh;
   overflow-y: auto;
   border: 1px solid var(--bgm-border);
-  border-radius: var(--bgm-radius-md);
-  margin-bottom: var(--bgm-spacing-lg);
+  border-radius: var(--bgm-radius);
+  background-color: var(--bgm-bg-primary);
+  margin-bottom: var(--bgm-spacing-md);
 }
 
-.bgm-search-result-item {
-  display: flex;
-  gap: var(--bgm-spacing-md);
-  padding: var(--bgm-spacing-md);
-  border-bottom: 1px solid var(--bgm-border);
-  cursor: pointer;
-  transition: background 0.1s ease;
-}
-
-.bgm-search-result-item:hover {
-  background: var(--bgm-bg-secondary);
-}
-
-.bgm-result-cover {
-  width: 60px;
-  height: 84px;
-  object-fit: cover;
-  border-radius: var(--bgm-radius-sm);
-}
-
-.bgm-result-cover-placeholder {
-  width: 60px;
-  height: 84px;
-  background: var(--bgm-bg-modifier);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--bgm-font-size-small);
-  color: var(--bgm-text-muted);
-  border-radius: var(--bgm-radius-sm);
-}
-
-.bgm-result-info {
-  flex: 1;
-}
-
-.bgm-result-title {
-  font-weight: 600;
-  margin-bottom: var(--bgm-spacing-xs);
-}
-
-.bgm-result-meta {
-  font-size: var(--bgm-font-size-small);
-  color: var(--bgm-text-muted);
-}
-
-.bgm-search-empty {
-  padding: var(--bgm-spacing-xl);
+.bangumi-loading,
+.bangumi-empty {
+  padding: var(--bgm-spacing-lg);
   text-align: center;
   color: var(--bgm-text-muted);
+  font-style: italic;
 }
 
-.bgm-search-pagination {
+.bangumi-result-row {
+  display: flex;
+  align-items: center;
+  padding: 10px var(--bgm-spacing-md);
+  border-bottom: 1px solid var(--bgm-border);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.bangumi-result-row:last-child {
+  border-bottom: none;
+}
+
+.bangumi-result-row:hover {
+  background-color: var(--bgm-bg-hover);
+}
+
+.bangumi-result-type {
+  color: var(--bgm-accent);
+  font-size: 0.85em;
+  font-weight: 600;
+  margin-right: var(--bgm-spacing-sm);
+}
+
+.bangumi-result-year {
+  color: var(--bgm-text-muted);
+  font-size: 0.9em;
+  margin-left: var(--bgm-spacing-sm);
+}
+
+/* 搜索分页 */
+.bangumi-search-pagination {
   display: flex;
   justify-content: center;
   align-items: center;
   gap: var(--bgm-spacing-md);
-  margin-top: var(--bgm-spacing-lg);
-}
-
-.bgm-pagination-btn {
-  padding: var(--bgm-spacing-xs) var(--bgm-spacing-md);
-}
-
-.bgm-page-info {
-  font-size: var(--bgm-font-size-small);
+  font-size: 0.9em;
   color: var(--bgm-text-muted);
 }
 
-/**
- * 表单组件样式 (用于 SubjectiveModal 等)
- */
 
-.bgm-subjective-modal .setting-item {
-  border-top: none;
-  padding: var(--bgm-spacing-sm) 0;
+/* ──────────────────────────────────────────────────────────────────────────
+   4. VIEWS: settings.css
+   设置页 (SettingTab) 专属样式
+   ────────────────────────────────────────────────────────────────────────── */
+
+.bgm-settings-container {
+  padding-bottom: 40px;
 }
 
-.bgm-subjective-modal .setting-item-info {
-  flex: 1;
-}
-
-.bgm-subjective-modal .setting-item-control {
-  flex: 2;
-}
-
-.bgm-subjective-modal textarea {
-  min-height: 80px;
-  width: 100%;
-}
-
-.bgm-subjective-modal select,
-.bgm-subjective-modal input[type="text"] {
-  width: 100%;
-}
-
-/**
- * 设置页样式 (SettingTab)
- */
-
-.bgm-settings-tab .setting-item {
-  border-top: none;
-  padding: var(--bgm-spacing-sm) 0;
-}
-
-.bgm-settings-tab h3 {
-  margin-top: var(--bgm-spacing-xl);
-  margin-bottom: var(--bgm-spacing-md);
-  border-bottom: 1px solid var(--bgm-border);
-  padding-bottom: var(--bgm-spacing-xs);
-}
-
-.bgm-settings-tab h4 {
-  margin: var(--bgm-spacing-lg) 0 var(--bgm-spacing-sm);
-}
-
-.bgm-index-status {
-  background: var(--bgm-bg-secondary);
-  padding: var(--bgm-spacing-md);
-  border-radius: var(--bgm-radius-md);
-  margin-bottom: var(--bgm-spacing-md);
-  font-size: var(--bgm-font-size-small);
-}
-
-.bgm-status-ok {
-  color: var(--bgm-accent);
-}
-
-.bgm-status-missing {
-  color: var(--bgm-text-error);
-}
-
-.bgm-settings-tab details {
+.bgm-settings-title {
+  border-bottom: 2px solid var(--bgm-accent);
+  padding-bottom: var(--bgm-spacing-sm);
   margin-bottom: var(--bgm-spacing-lg);
-  border: 1px solid var(--bgm-border);
-  border-radius: var(--bgm-radius-md);
-  padding: var(--bgm-spacing-md);
 }
 
-.bgm-settings-tab summary {
+/* 数据仪表盘卡片 */
+.bgm-dashboard-card {
+  background-color: var(--bgm-bg-secondary);
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius-lg);
+  padding: var(--bgm-spacing-md) var(--bgm-spacing-lg);
+  margin-bottom: var(--bgm-spacing-lg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.bgm-dashboard-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bgm-bg-primary);
+  padding: 10px var(--bgm-spacing-md);
+  border-radius: var(--bgm-radius);
+  margin-top: var(--bgm-spacing-sm);
+  margin-bottom: var(--bgm-spacing-md);
+  border: 1px dashed var(--bgm-border);
+}
+
+.bgm-status-item {
+  font-weight: 500;
+}
+
+.bgm-text-muted {
+  color: var(--bgm-text-muted);
+  font-size: 0.9em;
+}
+
+/* 分类折叠面板 (手风琴效果) */
+.bgm-category-details {
+  background-color: var(--bgm-bg-secondary);
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius);
+  margin-bottom: var(--bgm-spacing-md);
+  overflow: hidden;
+}
+
+.bgm-category-summary {
+  padding: 12px var(--bgm-spacing-md);
   font-weight: 600;
+  font-size: 1.05em;
   cursor: pointer;
+  background-color: var(--bgm-bg-primary);
+  transition: background-color 0.2s ease;
   user-select: none;
 }
 
-.bgm-settings-tab details > .setting-item {
-  padding-left: var(--bgm-spacing-lg);
+.bgm-category-summary:hover {
+  background-color: var(--bgm-bg-hover);
 }
 
-/**
- * 首次引导弹窗样式 (OnboardingModal)
- */
-
-.bgm-onboarding-desc {
-  margin-bottom: var(--bgm-spacing-xl);
-  color: var(--bgm-text-muted);
+/* 隐藏默认的 detail marker 并用 padding 抵消 */
+.bgm-category-details[open] .bgm-category-summary {
+  border-bottom: 1px solid var(--bgm-border);
 }
 
-.bgm-onboarding-hint {
-  margin-top: var(--bgm-spacing-xl);
-  font-size: var(--bgm-font-size-small);
+/* 模板预览区域 */
+.bgm-preview-btn {
+  margin: var(--bgm-spacing-md);
+}
+
+.bgm-template-preview {
+  margin: 0 var(--bgm-spacing-md) var(--bgm-spacing-md) var(--bgm-spacing-md);
+  padding: var(--bgm-spacing-md);
+  background-color: var(--background-primary-alt);
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius);
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: var(--font-monospace);
+  font-size: 0.85em;
+  white-space: pre-wrap;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   5. VIEWS: onboarding.css & progress.css
+   首次引导与进度弹窗专属样式
+   ────────────────────────────────────────────────────────────────────────── */
+
+.bgm-onboarding-desc,
+.bangumi-progress-desc {
+  font-size: 1.05em;
+  margin-bottom: var(--bgm-spacing-md);
+  line-height: 1.5;
+}
+
+.bangumi-progress-hint {
   color: var(--bgm-text-muted);
+  font-size: 0.9em;
+}
+
+.bangumi-progress-count {
+  font-size: 1.6em;
+  font-weight: bold;
   text-align: center;
+  color: var(--bgm-accent);
+  margin: var(--bgm-spacing-lg) 0;
+  padding: var(--bgm-spacing-md);
+  background-color: var(--bgm-bg-secondary);
+  border-radius: var(--bgm-radius);
+  border: 1px solid var(--bgm-border);
+}
+
+.bgm-onboarding-card {
+  background-color: var(--bgm-bg-secondary);
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius);
+  padding: var(--bgm-spacing-md);
+  margin-bottom: var(--bgm-spacing-md);
+}
+
+.bgm-onboarding-card h4 {
+  margin-top: 0;
+  color: var(--bgm-accent);
+}
+
+.bgm-onboarding-link {
+  display: inline-block;
+  padding: 8px 12px;
+  background-color: var(--bgm-bg-primary);
+  border: 1px solid var(--bgm-border);
+  border-radius: var(--bgm-radius);
+  text-decoration: none;
+  font-weight: 500;
+  transition: border-color 0.2s;
+}
+
+.bgm-onboarding-link:hover {
+  border-color: var(--bgm-accent);
+  text-decoration: none;
+}
+
+.bgm-skip-card {
+  background-color: transparent;
+  border-style: dashed;
+  opacity: 0.8;
 }

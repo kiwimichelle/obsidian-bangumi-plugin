@@ -1,96 +1,48 @@
-import { App, TFile, TFolder, normalizePath, Notice } from 'obsidian';
+import { App, normalizePath } from 'obsidian';
+import type { SubjectData, BangumiSettings } from '../types';
+import { parseYearSeason } from '../note/NoteBuilder';
 
-/**
- * Vault 文件/文件夹操作封装
- * @see https://docs.obsidian.md/Reference/TypeScript+API/Vault
- */
 export class VaultHelper {
-  constructor(private app: App) {}
+  /**
+   * 根据条目类型和设置，推导出其应当归档的目录（库内相对路径）
+   */
+  static buildSubjectDir(settings: BangumiSettings, data: SubjectData): string {
+    const config = settings.subjectTypes[data.typeKey];
+    const root = config.archiveRoot;
+    let subDir = '';
 
-  async ensureFolder(path: string): Promise<TFolder | null> {
-    const normalized = normalizePath(path);
-    const existing = this.app.vault.getAbstractFileByPath(normalized);
-    if (existing instanceof TFolder) return existing;
-    const parentPath = normalized.split('/').slice(0, -1).join('/');
-    if (parentPath && parentPath !== normalized) await this.ensureFolder(parentPath);
-    try {
-      return await this.app.vault.createFolder(normalized);
-    } catch (err) {
-      console.error(`[VaultHelper] 创建文件夹失败: ${normalized}`, err);
-      new Notice(`创建文件夹失败: ${normalized}`);
-      return null;
-    }
-  }
-
-  async writeFile(path: string, content: string): Promise<TFile | null> {
-    const normalized = normalizePath(path);
-    const existing = this.app.vault.getAbstractFileByPath(normalized);
-    if (existing instanceof TFile) {
-      try {
-        await this.app.vault.modify(existing, content);
-        return existing;
-      } catch (err) {
-        console.error(`[VaultHelper] 修改文件失败: ${normalized}`, err);
-        new Notice(`修改文件失败: ${normalized}`);
-        return null;
+    if (data.typeKey === 'anime' || data.typeKey === 'real') {
+      const { year, season } = parseYearSeason(data.date);
+      if (config.archiveMode === 'season') {
+        subDir = `${year}/${season}`;
+      } else if (config.archiveMode === 'year') {
+        subDir = `${year}`;
       }
-    } else {
-      const folderPath = normalized.split('/').slice(0, -1).join('/');
-      if (folderPath) await this.ensureFolder(folderPath);
-      try {
-        return await this.app.vault.create(normalized, content);
-      } catch (err) {
-        console.error(`[VaultHelper] 创建文件失败: ${normalized}`, err);
-        new Notice(`创建文件失败: ${normalized}`);
-        return null;
+    } else if (data.typeKey === 'book') {
+      // 书籍使用子类别分流 (漫画 / 小说)
+      const subtypeLabel = data.platform === '漫画' ? '漫画' : '小说';
+      subDir = subtypeLabel;
+    }
+
+    const fullPath = subDir ? `${root}/${subDir}` : root;
+    return normalizePath(fullPath);
+  }
+
+  /**
+   * 确保目录存在，不存在则逐级创建
+   */
+  static async ensureFolder(app: App, path: string): Promise<void> {
+    const parts = path.split('/');
+    let current = '';
+
+    for (const part of parts) {
+      if (!part) continue;
+      current = current ? `${current}/${part}` : part;
+      
+      const folderExists = app.vault.getAbstractFileByPath(current);
+      if (!folderExists) {
+        await app.vault.createFolder(current);
       }
     }
   }
-
-  async readFile(path: string): Promise<string | null> {
-    const normalized = normalizePath(path);
-    const file = this.app.vault.getAbstractFileByPath(normalized);
-    if (!(file instanceof TFile)) return null;
-    try {
-      return await this.app.vault.read(file);
-    } catch (err) {
-      console.error(`[VaultHelper] 读取文件失败: ${normalized}`, err);
-      return null;
-    }
-  }
-
-  async exists(path: string): Promise<boolean> {
-    const normalized = normalizePath(path);
-    const file = this.app.vault.getAbstractFileByPath(normalized);
-    return file instanceof TFile;
-  }
-
-  async folderExists(path: string): Promise<boolean> {
-    const normalized = normalizePath(path);
-    const folder = this.app.vault.getAbstractFileByPath(normalized);
-    return folder instanceof TFolder;
-  }
-
-  async getUniqueFilePath(basePath: string, extension: string): Promise<string> {
-    let candidate = `${basePath}.${extension}`;
-    let counter = 1;
-    while (await this.exists(candidate)) {
-      candidate = `${basePath} (${counter}).${extension}`;
-      counter++;
-    }
-    return candidate;
-  }
-
-  async deleteFile(path: string): Promise<boolean> {
-  const normalized = normalizePath(path);
-  const file = this.app.vault.getAbstractFileByPath(normalized);
-  if (!(file instanceof TFile)) return false;
-  try {
-    await this.app.fileManager.trashFile(file);
-    return true;
-  } catch (err) {
-    console.error(`[VaultHelper] 删除文件失败: ${normalized}`, err);
-    return false;
-  }
-}
 }

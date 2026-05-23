@@ -1,10 +1,8 @@
 import { App, TFile } from 'obsidian';
 import { getInfoboxValue } from '../core/WikiParser';
 import {
-  AnimeSubjective, BangumiSettings, BookSubjective,
-  GameSubjective, InfoboxEntry, MusicSubjective,
-  RealSubjective, SubjectData,
-  SubjectTypeKey, Subjective,
+  BangumiSettings, InfoboxEntry,
+  SubjectData, SubjectTypeKey, Subjective,
 } from '../types';
 import { BGM_WEB_BASE, DEFAULT_TEMPLATES } from '../constants';
 import {
@@ -12,6 +10,7 @@ import {
   buildNetabaIframe, buildRelationLinks, buildRelationNames,
   buildTagsYaml, renderTemplate,
 } from './TemplateEngine';
+import { buildSubjectiveFields } from './Subjectivemapper';
 
 // ─────────────────────────────────────────────
 // 公开接口
@@ -104,7 +103,7 @@ export class NoteBuilder {
       track_count:         getInfoboxValue(data.infobox, ['曲目数', '曲目']),
 
       // ── 主观输入 ───────────────────────────────────────────────
-      ...buildSubjectiveVars(data.typeKey, subjective),
+      ...buildSubjectiveFields(data.typeKey, subjective),
     };
   }
 }
@@ -140,65 +139,4 @@ function detectAdaptation(entries: InfoboxEntry[]): string {
   if (s.includes('游戏') || s.includes('game')  || s.includes('gal'))   return '游戏改编';
   if (s.includes('原创') || source === '-')                               return '原创';
   return source;
-}
-
-// ─────────────────────────────────────────────
-// 主观输入变量映射
-// ─────────────────────────────────────────────
-
-function buildSubjectiveVars(typeKey: SubjectTypeKey, subjective: Subjective): Record<string, string> {
-  const base: Record<string, string> = {
-    my_status:        subjective.status,
-    my_rating:        (subjective as AnimeSubjective).rating   ?? '',
-    my_comment:       (subjective as AnimeSubjective).comment  ?? '',
-    my_progress:      '',
-    my_source:        '',
-    my_channel:       '',
-    my_version:       '',
-    my_read_progress: '',
-    my_hours:         '',
-    my_platform:      '',
-    my_game_progress: '',
-    my_music_source:  '',
-  };
-
-  switch (typeKey) {
-    case 'anime': {
-      const s = subjective as AnimeSubjective;
-      base.my_progress = s.progress;
-      base.my_source   = s.source;
-      break;
-    }
-    case 'book': {
-      const s = subjective as BookSubjective;
-      base.my_channel  = s.channel;
-      base.my_version  = s.version;
-      const parts = [
-        s.volNum  ? `第${s.volNum}卷`  : '',
-        s.unitNum ? `第${s.unitNum}话` : '',
-      ].filter(Boolean);
-      base.my_read_progress = parts.join(' / ');
-      break;
-    }
-    case 'game': {
-      const s = subjective as GameSubjective;
-      base.my_hours         = s.hours;
-      base.my_platform      = s.platform;
-      base.my_game_progress = s.progress;
-      break;
-    }
-    case 'music': {
-      const s = subjective as MusicSubjective;
-      base.my_music_source = s.source;
-      break;
-    }
-    case 'real': {
-      const s = subjective as RealSubjective;
-      base.my_progress = s.progress;
-      base.my_source   = s.source;
-      break;
-    }
-  }
-
-  return base;
 }

@@ -132,16 +132,16 @@ export class CacheManager {
 
   /**
    * 将当前内存 Map 序列化并整体覆盖写入磁盘。
-   * 通过 `writing` 串行化并发调用，避免后写覆盖前写时的交错。
+   * 通过链式 Promise 严格串行化并发调用：每次调用都追加在上一个写盘任务之后，
+   * 避免"await 完成后、赋值前"的窗口期导致两个 doWrite() 并发执行。
    */
-  private async writeToDisk(): Promise<void> {
-    if (this.writing) {
-      await this.writing;
-    }
-    this.writing = this.doWrite().finally(() => {
-      this.writing = null;
-    });
-    await this.writing;
+  private writeToDisk(): Promise<void> {
+    this.writing = (this.writing ?? Promise.resolve())
+      .then(() => this.doWrite())
+      .finally(() => {
+        this.writing = null;
+      });
+    return this.writing;
   }
 
   private async doWrite(): Promise<void> {

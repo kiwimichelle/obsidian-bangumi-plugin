@@ -1,76 +1,145 @@
-import { App, Modal, Setting, Notice } from 'obsidian';
+import { App, Modal, Notice, Platform } from 'obsidian';
 import type { BangumiSettings } from '../types';
+import { ArchiveLocator } from '../vault/ArchiveLocator';
+import type { IndexBuilder } from '../core/IndexBuilder';
+import type { SearchIndexBuilder } from '../core/SearchIndexBuilder';
+import { IndexProgressModal } from './IndexProgressModal';
+
+export interface OnboardingResult {
+  mode: 'offline' | 'online';
+  offlineDbPath?: string;
+}
 
 /**
  * 首次启动引导弹窗
- * @see https://docs.obsidian.md/Plugins/User+interface/Modals
+ * 使用库内文件选择（方案二）
  */
 export class OnboardingModal extends Modal {
-  private settings: BangumiSettings;
-  private onComplete: (newSettings: BangumiSettings) => void;
-  private offlinePathInput: HTMLInputElement | null = null;
+  private settled = false;
 
-  constructor(app: App, settings: BangumiSettings, onComplete: (newSettings: BangumiSettings) => void) {
+  private constructor(
+    app: App,
+    private readonly getSettings: () => BangumiSettings,
+    private readonly saveSettings: () => Promise<void>,
+    private readonly indexBuilder: IndexBuilder,
+    private readonly searchIndexBuilder: SearchIndexBuilder,
+    private readonly resolve: (result: OnboardingResult | null) => void,
+  ) {
     super(app);
-    this.settings = { ...settings };
-    this.onComplete = onComplete;
   }
 
-  onOpen() {
+  static prompt(
+    app: App,
+    getSettings: () => BangumiSettings,
+    saveSettings: () => Promise<void>,
+    indexBuilder: IndexBuilder,
+    searchIndexBuilder: SearchIndexBuilder,
+  ): Promise<OnboardingResult | null> {
+    return new Promise(resolve => {
+      const modal = new OnboardingModal(app, getSettings, saveSettings, indexBuilder, searchIndexBuilder, resolve);
+      modal.open();
+    });
+  }
+
+  onOpen(): void {
     const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass('bgm-plugin', 'bgm-onboarding-modal');
+    this.setTitle('欢迎使用 Bangumi 离线数据库');
+    contentEl.createEl('p', { text: '配置离线数据包可实现毫秒级搜索。', cls: 'bgm-onboarding-desc' });
 
-    contentEl.createEl('h2', { text: '欢迎使用 Bangumi 插件' });
-    contentEl.createEl('p', { text: '为了提供更好的离线体验，推荐下载 Bangumi 官方离线数据包。', cls: 'bgm-onboarding-desc' });
+    // 下载链接
+    const downloadBox = contentEl.createEl('div', { cls: 'bgm-onboarding-card' });
+    downloadBox.createEl('h4', { text: '步骤1：下载离线数据包' });
+    const link = downloadBox.createEl('a', {
+      text: '📦 前往 GitHub Releases 下载 subject.jsonlines',
+      href: 'https://github.com/bangumi/Archive/releases/latest',
+      cls: 'bgm-onboarding-link',
+    });
+    link.setAttr('target', '_blank');
 
-    // 选项1：下载
-    new Setting(contentEl)
-      .setName('下载离线数据包')
-      .setDesc('从 Bangumi/Archive 仓库获取最新的 subject.jsonl')
-      .addButton(btn => btn.setButtonText('前往下载').setCta().onClick(() => {
-        window.open('https://github.com/bangumi/Archive/releases', '_blank');
-        new Notice('请下载 subject.jsonl 文件');
-      }));
+    // 文件选择（支持库外系统路径）
+    const fileBox = contentEl.createEl('div', { cls: 'bgm-onboarding-card' });
+    fileBox.createEl('h4', { text: '步骤2：选择已下载的文件' });
+    const fileRow = fileBox.createEl('div', { cls: 'bgm-input-row' });
+    const pathInput = fileRow.createEl('input', { type: 'text', cls: 'bgm-path-input', placeholder: '/Users/you/Downloads/subject.jsonlines' });
 
-    // 选项2：选择已有文件
-    const pathSetting = new Setting(contentEl)
-      .setName('选择离线包路径')
-      .setDesc('支持绝对路径或库内相对路径（相对于 vault 根目录）');
-    this.offlinePathInput = pathSetting.controlEl.createEl('input', { type: 'text', placeholder: '例如：/path/to/subject.jsonl 或 bangumi-data/subject.jsonl' });
-    const browseBtn = pathSetting.controlEl.createEl('button', { text: '浏览' });
-    browseBtn.addEventListener('click', () => new Notice('请手动输入路径，支持绝对路径或 vault 内相对路径'));
-    pathSetting.addButton(btn => btn.setButtonText('确认使用此路径').onClick(async () => {
-      const rawPath = this.offlinePathInput?.value.trim();
-      if (!rawPath) { new Notice('请输入路径'); return; }
-      this.settings.offlineDbPath = rawPath;
-      this.settings.offlineMode = true;
-      new Notice('已设置离线包路径，下次启动将构建索引');
-      this.complete();
-    }));
+    // 桌面端提供系统文件选择按钮
+    if (Platform.isDesktop) {
+      const browseBtn = fileRow.createEl('button', { text: '📂 浏览…', cls: 'bgm-browse-btn' });
+      browseBtn.addEventListener('click', () => {
+        try {
+             
+            const { remote } = (window as any).require('electron');
+          const paths = remote.dialog.showOpenDialogSync(remote.getCurrentWindow(), {
+            title: '选择 Bangumi 离线数据包',
+            filters: [
+              { name: 'JSONL 数据包', extensions: ['jsonl', 'jsonlines', 'json'] },
+              { name: '所有文件', extensions: ['*'] },
+            ],
+            properties: ['openFile'],
+          });
+          if (paths && paths.length > 0) {
+            pathInput.value = paths[0]!;
+            pathInput.dispatchEvent(new Event('input'));
+          }
+        } catch {
+          new Notice('⚠️ 文件选择器不可用，请手动粘贴完整路径。');
+        }
+      });
+    }
 
-    // 选项3：跳过
-    new Setting(contentEl)
-      .setName('跳过离线设置')
-      .setDesc('始终使用 Bangumi API 在线搜索（较慢，依赖网络）')
-      .addButton(btn => btn.setButtonText('仅使用在线搜索').onClick(() => {
-        this.settings.offlineDbPath = '';
-        this.settings.offlineMode = false;
-        new Notice('已设置为仅使用在线搜索，可随时在设置中修改');
-        this.complete();
-      }));
+    const confirmBtn = fileBox.createEl('button', { text: '✅ 验证并启用离线模式', cls: 'bgm-full-width-btn' });
+    confirmBtn.disabled = true;
+    let selectedPath = '';
+
+    pathInput.addEventListener('input', () => {
+      selectedPath = pathInput.value.trim();
+      confirmBtn.disabled = !selectedPath;
+    });
+
+    confirmBtn.addEventListener('click', () => this.applyOfflineMode(selectedPath));
 
     contentEl.createEl('hr');
-    contentEl.createEl('p', { text: '提示：您随时可以在插件设置中修改离线包路径或切换模式。', cls: 'bgm-onboarding-hint' });
+    const skipBox = contentEl.createEl('div', { cls: 'bgm-onboarding-card bgm-skip-card' });
+    skipBox.createEl('h4', { text: '选项B：我只在有网时使用' });
+    const skipBtn = skipBox.createEl('button', { text: '⏭️ 跳过，仅使用在线 API' });
+    skipBtn.addEventListener('click', () => this.applyOnlineMode());
   }
 
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
+  onClose(): void {
+    if (!this.settled) {
+      this.settled = true;
+      this.resolve(null);
+    }
+    this.contentEl.empty();
   }
 
-  private complete() {
+  private async applyOfflineMode(rawPath: string): Promise<void> {
+    const settings = this.getSettings();
+    settings.offlineDbPath = rawPath;
+    const locator = new ArchiveLocator(this.app, this.getSettings);
+    const resolved = await locator.resolve();
+    if (!resolved) {
+      new Notice('❌ 文件无效或体积过小，请确保选择了完整的数据包。');
+      return;
+    }
+    settings.offlineMode = true;
+    settings.offlineDbPath = resolved; // 存储绝对路径或相对路径均可，locator 会处理
+    await this.saveSettings();
+
+    this.settled = true;
+    this.resolve({ mode: 'offline', offlineDbPath: resolved });
     this.close();
-    this.onComplete(this.settings);
+
+    IndexProgressModal.buildAll(this.app, resolved, this.indexBuilder, this.searchIndexBuilder);
+  }
+
+  private async applyOnlineMode(): Promise<void> {
+    const settings = this.getSettings();
+    settings.offlineMode = false;
+    await this.saveSettings();
+    new Notice('🌐 已切换为纯在线模式');
+    this.settled = true;
+    this.resolve({ mode: 'online' });
+    this.close();
   }
 }

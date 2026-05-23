@@ -153,15 +153,31 @@ export class DataManager {
 
   /**
    * 关键词搜索：
-   * - `offlineMode=true` 且离线索引就绪：优先走 SearchIndexBuilder 离线搜索；
-   *   命中数为 0 时**自动回退**到在线 API（避免离线索引太稀疏让用户抓瞎）
-   * - 否则：直接调 OnlineFetcher
+   * - 无 forceMode 时按 settings.offlineMode 自动决策；离线命中为 0 时回退在线
+   * - forceMode='offline'：强制离线，索引未就绪则抛错
+   * - forceMode='online'：强制在线，跳过离线索引
    *
-   * 返回的 `fromOffline` 字段供 UI 标记结果来源。
+   * @param query     搜索关键词与分页参数
+   * @param forceMode 由 UI 层显式指定的数据源模式（可选）
    */
-  async search(query: SearchQuery): Promise<SearchResponse> {
-    const settings = this.getSettings();
+  async search(query: SearchQuery, forceMode?: 'offline' | 'online'): Promise<SearchResponse> {
     const limit = query.limit > 0 ? query.limit : DEFAULT_PAGE_SIZE;
+
+    // 1. 如果 UI 显式强制走在线模式
+    if (forceMode === 'online') {
+      return this.fetcher.searchByKeyword(query);
+    }
+
+    // 2. 如果 UI 显式强制走离线模式
+    if (forceMode === 'offline') {
+      if (!this.searchIndex.isReady()) {
+        throw new Error('离线索引未就绪');
+      }
+      return this.searchOffline(query, limit);
+    }
+
+    // 3. 兜底逻辑：无强制指定时，按照 Setting 自动决策
+    const settings = this.getSettings();
     const useOffline = settings.offlineMode && this.searchIndex.isReady();
 
     if (useOffline) {

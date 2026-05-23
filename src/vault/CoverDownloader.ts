@@ -1,67 +1,51 @@
-import { App, requestUrl, Notice } from 'obsidian';
+import { App, normalizePath, requestUrl } from 'obsidian';
+import type { BangumiSettings, SubjectTypeKey } from '../types';
 import { VaultHelper } from './VaultHelper';
 
 export class CoverDownloader {
-  private helper: VaultHelper;
-  private static ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+  /**
+   * 下载封面并保存到本地。
+   * 如果下载失败，退级返回原在线 URL。
+   * @returns 本地路径 (如 'Bangumi/Covers/xxxx.jpg') 或在线 URL
+   */
+  static async download(
+    app: App,
+    url: string,
+    settings: BangumiSettings,
+    typeKey: SubjectTypeKey,
+    baseName: string
+  ): Promise<string> {
+    if (!url) return '';
 
-  constructor(app: App) {
-    this.helper = new VaultHelper(app);
-  }
+    const config = settings.subjectTypes[typeKey];
+    // 如果没有单独配置封面路径，默认放入对应的 Covers 子文件夹
+    const coverDir = config.coverPath || `${config.archiveRoot}/Covers`;
+    
+    await VaultHelper.ensureFolder(app, coverDir);
 
-  async downloadCover(url: string, subjectId: number, coverDir: string): Promise<string | null> {
-    if (!url) return null;
+    // 提取扩展名或默认为 jpg
+    const extMatch = url.match(/\.([a-zA-Z0-9]+)(?:[\?#]|$)/);
+    const ext = extMatch ? extMatch[1] : 'jpg';
+    
+    const fileName = `${baseName}.${ext}`;
+    const localPath = normalizePath(`${coverDir}/${fileName}`);
 
-    const ext = this.extractExtension(url);
-    const filename = `${subjectId}.${ext}`;
-    const localPath = `${coverDir}/${filename}`;
-
-    if (await this.helper.exists(localPath)) return localPath;
-
-    await this.helper.ensureFolder(coverDir);
+    // 如果已经下载过了，直接使用本地图片
+    const existingFile = app.vault.getAbstractFileByPath(localPath);
+    if (existingFile) {
+      return localPath;
+    }
 
     try {
-      const response = await requestUrl({ url, method: 'GET' });
-      if (response.status !== 200) {
-        console.warn(`[CoverDownloader] 下载失败 HTTP ${response.status}: ${url}`);
-        return null;
-      }
-      const buffer = response.arrayBuffer;
-      if (!buffer) return null;
-      const uint8Array = new Uint8Array(buffer);
-      await this.writeBinaryFile(localPath, uint8Array);
+      const resp = await requestUrl({ url, method: 'GET' });
+      if (resp.status !== 200) return url;
+      
+      await app.vault.createBinary(localPath, resp.arrayBuffer);
       return localPath;
     } catch (err) {
-      console.error(`[CoverDownloader] 下载异常: ${url}`, err);
-      new Notice(`封面下载失败: ${subjectId}`);
-      return null;
+      console.warn(`[bangumi] 封面下载失败: ${url}`, err);
+      // 网络故障时，退级为直接使用 URL
+      return url; 
     }
-  }
-
-  async downloadCovers(urls: Map<number, string>, coverDir: string, onProgress?: (current: number, total: number) => void): Promise<Map<number, string>> {
-    const result = new Map<number, string>();
-    let completed = 0;
-    const total = urls.size;
-    for (const [id, url] of urls) {
-      const localPath = await this.downloadCover(url, id, coverDir);
-      if (localPath) result.set(id, localPath);
-      completed++;
-      onProgress?.(completed, total);
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    return result;
-  }
-
-  private extractExtension(url: string): string {
-    const match = url.match(/\.(jpg|jpeg|png|webp|gif)(?:\?|$)/i);
-    if (match && match[1]) {
-      const ext = match[1].toLowerCase();
-      if (CoverDownloader.ALLOWED_EXTENSIONS.includes(ext)) return ext;
-    }
-    return 'jpg';
-  }
-
-  private async writeBinaryFile(path: string, data: Uint8Array): Promise<void> {
-    await (this.helper as any).app.vault.adapter.writeBinary(path, data);
   }
 }

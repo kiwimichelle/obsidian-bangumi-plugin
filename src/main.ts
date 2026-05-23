@@ -1,7 +1,8 @@
-import { Plugin, Notice, TFile } from 'obsidian';
-import type { BangumiSettings, SubjectData, Subjective } from './types';
+import { Plugin, Notice, Modal, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS } from './constants';
-import { DataManager, SubjectNotFoundError } from './core/DataManager';
+import type { BangumiSettings } from './types';
+
+// ── 核心调度 ──
 import { CacheManager } from './core/CacheManager';
 import { IndexBuilder } from './core/IndexBuilder';
 import { SearchIndexBuilder } from './core/SearchIndexBuilder';
@@ -9,30 +10,27 @@ import { JsonlReader } from './core/JsonlReader';
 import { OnlineFetcher } from './core/OnlineFetcher';
 import { BgmScraper } from './core/BgmScraper';
 import { RelationFetcher } from './core/RelationFetcher';
+import { DataManager } from './core/DataManager';
+
+// ── 笔记与归档 ──
 import { ArchiveLocator } from './vault/ArchiveLocator';
+import { NamingResolver } from './vault/NamingResolver';
 import { VaultHelper } from './vault/VaultHelper';
 import { CoverDownloader } from './vault/CoverDownloader';
-import { NamingResolver } from './vault/NamingResolver';
 import { NoteBuilder } from './note/NoteBuilder';
-import { FrontmatterWriter } from './note/FrontmatterWriter';
 import { NoteUpdater } from './note/NoteUpdater';
-import { SettingTab } from './ui/SettingTab';
+import { FrontmatterWriter } from './note/FrontmatterWriter';
+
+// ── 用户界面 ──
+import { BangumiSettingTab } from './ui/SettingTab';
 import { SearchModal } from './ui/SearchModal';
-import { SubjectiveModal } from './ui/SubjectiveModal';
+import type { SearchResult } from './ui/SearchModal';
 import { OnboardingModal } from './ui/OnboardingModal';
-import { IndexProgressModal } from './ui/IndexProgressModal';
-import { ProgressNotice } from './ui/ProgressNotice';
 
 export default class BangumiPlugin extends Plugin {
   settings!: BangumiSettings;
-  private dataManager!: DataManager;
-  private vaultHelper!: VaultHelper;
-  private coverDownloader!: CoverDownloader;
-  private namingResolver!: NamingResolver;
-  private noteBuilder!: NoteBuilder;
-  private frontmatterWriter!: FrontmatterWriter;
-  private noteUpdater!: NoteUpdater;
-  private archiveLocator!: ArchiveLocator;
+
+  // ── 核心单例 ──
   private cacheManager!: CacheManager;
   private indexBuilder!: IndexBuilder;
   private searchIndexBuilder!: SearchIndexBuilder;
@@ -40,81 +38,32 @@ export default class BangumiPlugin extends Plugin {
   private onlineFetcher!: OnlineFetcher;
   private bgmScraper!: BgmScraper;
   private relationFetcher!: RelationFetcher;
-  private settingTab: SettingTab | null = null;
-
-  private state = {
-    offlineAvailable: false,
-    indexReady: false,
-    searchIndexReady: false,
-    cacheLoaded: false,
-  };
+  private archiveLocator!: ArchiveLocator;
+  private dataManager!: DataManager;
 
   async onload() {
     await this.loadSettings();
-    await this.initializeModules();
 
-    this.settingTab = new SettingTab(this.app, this);
-    this.addSettingTab(this.settingTab);
-
-    this.addCommand({
-      id: 'search-bangumi',
-      name: '搜索 Bangumi 条目',
-      callback: () => this.openSearchModal(),
-    });
-    this.addCommand({
-      id: 'rebuild-index',
-      name: '重建行号索引',
-      callback: () => this.rebuildIndex(),
-    });
-    this.addCommand({
-      id: 'rebuild-search-index',
-      name: '重建搜索索引',
-      callback: () => this.rebuildSearchIndex(),
-    });
-
-    if (!this.settings.offlineDbPath && !this.settings.offlineMode) {
-      new OnboardingModal(this.app, this.settings, async (newSettings) => {
-        this.settings = newSettings;
-        await this.saveSettings();
-        if (this.settings.offlineDbPath) {
-          await this.resolveOfflinePath();
-          if (this.state.offlineAvailable) {
-            await this.rebuildIndex();
-            await this.rebuildSearchIndex();
-          }
-        }
-      }).open();
-    } else {
-      await this.resolveOfflinePath();
-      if (this.state.offlineAvailable && !this.state.indexReady) {
-        new Notice('离线包可用，正在构建索引...');
-        await this.rebuildIndex();
-        await this.rebuildSearchIndex();
-      }
-    }
-  }
-
-  async onunload() {
-    await this.cacheManager?.flush();
-  }
-
-  private async initializeModules() {
-    this.vaultHelper = new VaultHelper(this.app);
-    this.coverDownloader = new CoverDownloader(this.app);
-    this.namingResolver = new NamingResolver(this.app, this.settings);
-    this.noteBuilder = new NoteBuilder(this.app, () => this.settings);
-    this.frontmatterWriter = new FrontmatterWriter(this.app);
-    this.noteUpdater = new NoteUpdater(this.app);
-
-    this.cacheManager = new CacheManager(this.app, (this as any).manifest.dir ?? '');
-    this.indexBuilder = new IndexBuilder(this.app, (this as any).manifest.dir ?? '');
-    this.searchIndexBuilder = new SearchIndexBuilder(this.app, (this as any).manifest.dir ?? '');
+    // 1. 初始化核心基础设施
+    this.cacheManager = new CacheManager(this.app, this.manifest.dir!);
+    this.indexBuilder = new IndexBuilder(this.app, this.manifest.dir!);
+    this.searchIndexBuilder = new SearchIndexBuilder(this.app, this.manifest.dir!);
     this.jsonlReader = new JsonlReader();
     this.onlineFetcher = new OnlineFetcher(() => this.settings);
     this.bgmScraper = new BgmScraper();
     this.relationFetcher = new RelationFetcher(this.onlineFetcher);
     this.archiveLocator = new ArchiveLocator(this.app, () => this.settings);
 
+    // 预加载缓存和解析本地路径
+    await this.cacheManager.load();
+    await this.indexBuilder.load();
+    await this.searchIndexBuilder.load();
+    await this.archiveLocator.resolve();
+
+    // 检测离线索引是否已过期（数据包被替换但未重建索引）
+    void this.checkIndexStaleness();
+
+    // 2. 初始化数据总阀门 DataManager
     this.dataManager = new DataManager({
       cache: this.cacheManager,
       index: this.indexBuilder,
@@ -127,151 +76,50 @@ export default class BangumiPlugin extends Plugin {
       getSettings: () => this.settings,
     });
 
-    await this.cacheManager.load();
-    this.state.cacheLoaded = true;
-  }
+    // 3. 注册 UI 及交互
+    this.addSettingTab(
+      new BangumiSettingTab(
+        this.app,
+        this,
+        () => this.settings,
+        () => this.saveSettings(),
+        this.indexBuilder,
+        this.searchIndexBuilder
+      )
+    );
 
-  private async resolveOfflinePath() {
-    const path = await this.archiveLocator.resolve();
-    this.state.offlineAvailable = !!path;
-    if (path) {
-      await this.indexBuilder.load();
-      await this.searchIndexBuilder.load();
-      this.state.indexReady = this.indexBuilder.isReady();
-      this.state.searchIndexReady = this.searchIndexBuilder.isReady();
-      if (!this.state.indexReady || !this.state.searchIndexReady) {
-        new Notice('离线包路径已更新，请手动重建索引（命令面板）');
+    this.addRibbonIcon('tv', 'Bangumi 搜索', () => this.openSearchModal());
+
+    this.addCommand({
+      id: 'search-bangumi',
+      name: '搜索 Bangumi 条目',
+      callback: () => this.openSearchModal(),
+    });
+
+    // 4. 首次启动引导 (如果既没配置路径，也没跳过构建)
+    this.app.workspace.onLayoutReady(() => {
+      if (!this.settings.offlineDbPath && this.settings.indexBuiltAt === 0) {
+        void OnboardingModal.prompt(
+          this.app,
+          () => this.settings,
+          () => this.saveSettings(),
+          this.indexBuilder,
+          this.searchIndexBuilder
+        );
       }
+    });
+  }
+
+  async onunload() {
+    // 确保任何在内存中的用户修改安全落盘
+    if (this.cacheManager) {
+      await this.cacheManager.flush();
     }
   }
 
-  async rebuildIndex(): Promise<void> {
-    const jsonlPath = this.archiveLocator.getCachedPath();
-    if (!jsonlPath) {
-      new Notice('离线包路径未设置或无效');
-      return;
-    }
-    let stale = true;
-    try { stale = await this.indexBuilder.isStale(jsonlPath); } catch { /* ignore */ }
-    if (!stale && this.indexBuilder.isReady()) {
-      new Notice('行号索引已是最新');
-      return;
-    }
-
-    let totalLines = 0;
-    const modal = new IndexProgressModal(this.app, '构建行号索引', 0);
-    modal.open();
-    try {
-      await this.indexBuilder.build(jsonlPath, (lines) => {
-        totalLines = lines;
-        modal.updateProgress(lines);
-      });
-      modal.complete(`行号索引构建完成，共 ${totalLines} 行`);
-      this.state.indexReady = true;
-      this.settings.indexBuiltAt = Date.now();
-      await this.saveSettings();
-    } catch (err) {
-      console.error(err);
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      modal.fail(errorMessage);
-      this.state.indexReady = false;
-    }
-  }
-
-  async rebuildSearchIndex(): Promise<void> {
-    const jsonlPath = this.archiveLocator.getCachedPath();
-    if (!jsonlPath) {
-      new Notice('离线包路径未设置或无效');
-      return;
-    }
-    let stale = true;
-    try { stale = await this.searchIndexBuilder.isStale(jsonlPath); } catch { /* ignore */ }
-    if (!stale && this.searchIndexBuilder.isReady()) {
-      new Notice('搜索索引已是最新');
-      return;
-    }
-
-    let totalLines = 0;
-    const modal = new IndexProgressModal(this.app, '构建搜索索引', 0);
-    modal.open();
-    try {
-      await this.searchIndexBuilder.build(jsonlPath, (lines) => {
-        totalLines = lines;
-        modal.updateProgress(lines);
-      });
-      modal.complete(`搜索索引构建完成，共 ${totalLines} 行`);
-      this.state.searchIndexReady = true;
-      this.settings.searchIndexBuiltAt = Date.now();
-      await this.saveSettings();
-    } catch (err) {
-      console.error(err);
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      modal.fail(errorMessage);
-      this.state.searchIndexReady = false;
-    }
-  }
-
-  async openSearchModal() {
-    new SearchModal(this.app, this.dataManager, async (item) => {
-      try {
-        const subjectData = await this.dataManager.getSubject(item.id);
-        new SubjectiveModal(this.app, subjectData, async (subjective) => {
-          await this.createOrUpdateNote(subjectData, subjective);
-        }).open();
-      } catch (err) {
-        if (err instanceof SubjectNotFoundError) {
-          new Notice(`条目 #${item.id} 不存在于任何数据源`);
-        } else {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          new Notice(`获取条目失败: ${errorMessage}`);
-        }
-      }
-    }).open();
-  }
-
-  private async createOrUpdateNote(subjectData: SubjectData, subjective: Subjective) {
-    const typeConfig = this.settings.subjectTypes[subjectData.typeKey];
-    const namingResult = this.namingResolver.resolve(subjectData);
-    const finalPath = `${typeConfig.archiveRoot}/${namingResult.filename}.md`;
-
-    let targetFile: TFile | null = null;
-    if (namingResult.existingPath) {
-      const existing = this.app.vault.getAbstractFileByPath(namingResult.existingPath);
-      if (existing instanceof TFile) targetFile = existing;
-    }
-
-    let coverLocalPath = '';
-    if (subjectData.coverUrl && typeConfig.coverPath) {
-      const progress = new ProgressNotice('下载封面');
-      const local = await this.coverDownloader.downloadCover(
-        subjectData.coverUrl,
-        subjectData.id,
-        typeConfig.coverPath,
-      );
-      if (local) coverLocalPath = local;
-      progress.done();
-    }
-
-    const buildResult = await this.noteBuilder.build(subjectData, subjective, coverLocalPath);
-    let finalContent = buildResult.content;
-    if (targetFile) {
-      const preserved = await this.noteUpdater.extract(targetFile, subjectData.typeKey);
-      finalContent = this.noteUpdater.inject(finalContent, preserved, subjectData.typeKey);
-    }
-
-    const file = await this.vaultHelper.writeFile(finalPath, finalContent);
-    if (!file) {
-      new Notice('笔记创建失败');
-      return;
-    }
-
-    await this.frontmatterWriter.writeBangumiFields(file, subjectData, coverLocalPath);
-    if (!targetFile) {
-      await this.frontmatterWriter.writeSubjectiveFields(file, subjectData.typeKey, subjective);
-    }
-
-    new Notice(targetFile ? `笔记已更新：${finalPath}` : `笔记已创建：${finalPath}`);
-  }
+  // ─────────────────────────────────────────────
+  // 配置持久化
+  // ─────────────────────────────────────────────
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -279,10 +127,184 @@ export default class BangumiPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
-    this.settingTab?.display();
   }
 
-  getState() {
-    return { ...this.state };
+  // ─────────────────────────────────────────────
+  // 核心建档流程
+  // ─────────────────────────────────────────────
+
+  /**
+   * 打开搜索面板，等待用户操作
+   */
+  private async openSearchModal() {
+    const result = await SearchModal.prompt(this.app, this.dataManager, () => this.settings);
+    if (result) {
+      await this.createOrUpdateNote(result);
+    }
+  }
+
+  /**
+   * 将搜索结果与用户主观输入转化为 Obsidian 实体笔记
+   */
+  private async createOrUpdateNote(result: SearchResult): Promise<void> {
+    const { data, subjective } = result;
+    const config = this.settings.subjectTypes[data.typeKey];
+
+    // 1. 决议防撞命名
+    const namingResolver = new NamingResolver(this.app, this.settings);
+    const naming = namingResolver.resolve(data);
+
+    if (naming.existingPath) {
+      if (config.overwriteMode === 'never') {
+        new Notice(`已跳过：${naming.filename}（依据设置中的不覆盖策略）`);
+        const existing = this.app.vault.getAbstractFileByPath(naming.existingPath);
+        if (existing instanceof TFile) await this.app.workspace.getLeaf('tab').openFile(existing);
+        return;
+      }
+      if (config.overwriteMode === 'ask' && naming.conflict === 'none') {
+        // 同 ID 更新场景才询问；跨媒介防撞（conflict='same'/'other'）直接新建不询问
+        const confirmed = await this.confirmOverwrite(naming.filename);
+        if (!confirmed) {
+          new Notice('已取消');
+          return;
+        }
+      }
+    }
+
+    // 2. 准备层级目录
+    const targetDir = VaultHelper.buildSubjectDir(this.settings, data);
+    await VaultHelper.ensureFolder(this.app, targetDir);
+
+    // 3. 下载封面
+    let coverLocalPath = '';
+    if (data.coverUrl) {
+      coverLocalPath = await CoverDownloader.download(this.app, data.coverUrl, this.settings, data.typeKey, naming.filename);
+    }
+
+    // 4. 构建渲染正文
+    const builder = new NoteBuilder(this.app, () => this.settings);
+    const buildResult = await builder.build(data, subjective, coverLocalPath);
+    let finalContent = buildResult.content;
+
+    let file: TFile;
+    const vault = this.app.vault;
+
+    // 5. 写入或合并文件
+    if (naming.existingPath && naming.conflict === 'none') {
+      // 场景：同 ID 文件已存在，执行安全更新注入
+      file = vault.getAbstractFileByPath(naming.existingPath) as TFile;
+      const updater = new NoteUpdater(this.app);
+      const preserved = await updater.extract(file, data.typeKey);
+      finalContent = updater.inject(finalContent, preserved, data.typeKey);
+      await vault.modify(file, finalContent);
+    } else {
+      // 场景：全新创建 (含跨媒介防撞生成的新文件)
+      const filePath = `${targetDir}/${naming.filename}.md`;
+      file = await vault.create(filePath, finalContent);
+    }
+
+    // 6. 覆写 Frontmatter
+    const fmWriter = new FrontmatterWriter(this.app);
+    await fmWriter.writeBangumiFields(file, data, coverLocalPath);
+    
+    // （仅对新创建的笔记写入主观属性，避免抹去旧笔记的用户手改记录）
+    if (!naming.existingPath || naming.conflict !== 'none') {
+      await fmWriter.writeSubjectiveFields(file, data.typeKey, subjective);
+    }
+
+    // 7. 收尾：在当前标签页打开它
+    new Notice(`✅ 成功建档：${naming.filename}`);
+    await this.app.workspace.getLeaf('tab').openFile(file);
+  }
+
+  // ─────────────────────────────────────────────
+  // 辅助：索引过期检测
+  // ─────────────────────────────────────────────
+
+  /**
+   * 检查离线索引是否相对当前数据包已过期，若是则弹出 Notice 提示用户重建。
+   * fire-and-forget，不阻塞启动流程。
+   */
+  private async checkIndexStaleness(): Promise<void> {
+    const jsonlPath = this.archiveLocator.getCachedPath();
+    if (!jsonlPath) return;
+    // 任意一个索引过期即提示（两个索引同源，通常同时过期）
+    const stale = await this.indexBuilder.isStale(jsonlPath)
+      || await this.searchIndexBuilder.isStale(jsonlPath);
+    if (stale) {
+      new Notice(
+        '⚠️ Bangumi 离线索引已过期，请前往设置页重建索引',
+        8000,
+      );
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // 辅助：覆盖确认对话框
+  // ─────────────────────────────────────────────
+
+  /**
+   * 弹出确认对话框，询问是否覆盖已存在的笔记。
+   * 返回 true 表示用户确认覆盖，false 表示取消。
+   */
+  private confirmOverwrite(filename: string): Promise<boolean> {
+    return new Promise(resolve => {
+      const modal = new ConfirmModal(
+        this.app,
+        `笔记「${filename}」已存在，是否覆盖更新？`,
+        resolve,
+      );
+      modal.open();
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
+// 内部：通用确认对话框
+// ─────────────────────────────────────────────
+
+class ConfirmModal extends Modal {
+  private settled = false;
+
+  constructor(
+    app: import('obsidian').App,
+    private readonly message: string,
+    private readonly resolve: (confirmed: boolean) => void,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    this.setTitle('确认操作');
+    contentEl.createEl('p', { text: this.message });
+
+    const btnRow = contentEl.createEl('div', { cls: 'bangumi-confirm-btns' });
+
+    const cancelBtn = btnRow.createEl('button', { text: '取消' });
+    cancelBtn.addEventListener('click', () => {
+      this.settled = true;
+      this.resolve(false);
+      this.close();
+    });
+
+    const confirmBtn = btnRow.createEl('button', {
+      text: '覆盖更新',
+      cls: 'bangumi-confirm-ok',
+    });
+    confirmBtn.addEventListener('click', () => {
+      this.settled = true;
+      this.resolve(true);
+      this.close();
+    });
+  }
+
+  onClose(): void {
+    // 用户通过 ESC / × 关闭视为取消；按钮点击后 settled=true 跳过
+    if (!this.settled) {
+      this.settled = true;
+      this.resolve(false);
+    }
+    this.contentEl.empty();
   }
 }

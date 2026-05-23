@@ -1,7 +1,13 @@
-import { App, Modal, Setting, Notice } from 'obsidian';
+import { App, Modal } from 'obsidian';
 import type {
-  SubjectData,
+  AnimeSubjective,
+  BookSubjective,
+  GameSubjective,
+  MusicSubjective,
+  RealSubjective,
   Subjective,
+  SubjectData,
+  SubjectTypeKey,
   BookSubtype,
   GamePlatform,
 } from '../types';
@@ -11,215 +17,273 @@ import {
   BOOK_VERSIONS,
   MUSIC_SOURCES,
   GAME_PLATFORMS,
+  SUBJECT_TYPE_LABEL,
 } from '../constants';
 
+// ─────────────────────────────────────────────
+// 书籍子类型判断（避免依赖 template.ts 的业务逻辑）
+// ─────────────────────────────────────────────
+
+/** 书籍子类型显示标签 → BookSubtype 映射 */
+const SUBTYPE_LABEL_MAP: Record<string, BookSubtype> = {
+  '漫画':  'manga',
+  '轻小说': 'lightnovel',
+  '小说':  'novel',
+};
+
+const SUBTYPE_LABELS = Object.keys(SUBTYPE_LABEL_MAP);
+
+/**
+ * 根据 SubjectData 推断书籍子类型的显示标签
+ * platform='漫画' 直接识别；其余默认小说
+ */
+function detectSubtypeLabel(data: SubjectData): string {
+  if (data.platform === '漫画') return '漫画';
+  return '小说';
+}
+
+// ─────────────────────────────────────────────
+// SubjectiveModal
+// ─────────────────────────────────────────────
+
+/**
+ * 用户主观输入弹窗
+ *
+ * 职责：
+ * - 根据条目 typeKey 渲染对应表单（动画/书籍/游戏/音乐/三次元）
+ * - 用户点击"保存并建档"→ resolve(Subjective)
+ * - 用户点击"取消"或直接关闭弹窗 → resolve(null)
+ *
+ * 使用方式：
+ * ```ts
+ * const result = await SubjectiveModal.prompt(app, data);
+ * if (!result) return; // 用户取消
+ * ```
+ */
 export class SubjectiveModal extends Modal {
-  private subjectData: SubjectData;
-  private onSubmit: (subjective: Subjective) => void;
-  private formValues: Record<string, string> = {};
+  private readonly data: SubjectData;
+  private readonly resolve: (val: Subjective | null) => void;
 
-  constructor(app: App, subjectData: SubjectData, onSubmit: (subjective: Subjective) => void) {
+  private constructor(
+    app: App,
+    data: SubjectData,
+    resolve: (val: Subjective | null) => void,
+  ) {
     super(app);
-    this.subjectData = subjectData;
-    this.onSubmit = onSubmit;
+    this.data = data;
+    this.resolve = resolve;
   }
 
-  onOpen() {
-    const { contentEl, subjectData } = this;
-    contentEl.empty();
-    contentEl.addClass('bgm-plugin', 'bgm-subjective-modal');
+  /**
+   * 打开弹窗并返回 Promise。
+   * 用户取消或关闭时 resolve(null)，正常提交时 resolve(Subjective)。
+   */
+  static prompt(app: App, data: SubjectData): Promise<Subjective | null> {
+    return new Promise(resolve => {
+      new SubjectiveModal(app, data, resolve).open();
+    });
+  }
 
-    contentEl.createEl('h2', { text: `添加「${subjectData.name}」的主观信息` });
-    contentEl.createEl('p', { text: `类型：${this.getTypeLabel(subjectData.typeKey)}`, cls: 'bgm-subjective-type-hint' });
+  onOpen(): void {
+    const { contentEl, data } = this;
+    const typeLabel = SUBJECT_TYPE_LABEL[data.typeKey];
+    this.setTitle(`${data.name}（${typeLabel}）`);
 
-    this.addStatusField(subjectData.typeKey);
-
-    switch (subjectData.typeKey) {
-      case 'anime':
-        this.addAnimeFields();
-        break;
-      case 'book':
-        this.addBookFields();
-        break;
-      case 'game':
-        this.addGameFields();
-        break;
-      case 'music':
-        this.addMusicFields();
-        break;
-      case 'real':
-        this.addRealFields();
-        break;
+    switch (data.typeKey) {
+      case 'anime': this.buildAnimeForm(contentEl); break;
+      case 'book':  this.buildBookForm(contentEl);  break;
+      case 'game':  this.buildGameForm(contentEl);  break;
+      case 'music': this.buildMusicForm(contentEl); break;
+      case 'real':  this.buildRealForm(contentEl);  break;
     }
-
-    this.addRatingField();
-    this.addCommentField();
-
-    const buttonDiv = contentEl.createDiv({ cls: 'bgm-modal-buttons' });
-    const cancelBtn = buttonDiv.createEl('button', { text: '取消' });
-    cancelBtn.addEventListener('click', () => this.close());
-
-    const submitBtn = buttonDiv.createEl('button', { text: '确定', cls: 'mod-cta' });
-    submitBtn.addEventListener('click', () => this.handleSubmit());
   }
 
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
+  onClose(): void {
+    // 若 resolve 尚未被调用（直接关闭弹窗），视作取消
+    this.resolve(null);
+    this.contentEl.empty();
   }
 
-  private addStatusField(typeKey: SubjectData['typeKey']) {
-    const statusOptions = STATUS_OPTIONS[typeKey];
-    if (!statusOptions?.length) return;
+  // ─────────────────────────────────────────────
+  // 各分类表单
+  // ─────────────────────────────────────────────
 
-    new Setting(this.contentEl)
-      .setName('状态')
-      .setDesc('必选')
-      .addDropdown(dropdown => {
-        dropdown.addOption('', '请选择');
-        for (const opt of statusOptions) dropdown.addOption(opt, opt);
-        dropdown.onChange(value => (this.formValues.status = value));
-      });
-  }
+  private buildAnimeForm(el: HTMLElement): void {
+    const statusSel   = this.row(el, '观看状态').select(STATUS_OPTIONS.anime, '想看');
+    const progressInp = this.row(el, '已观看集数').number('0');
+    const sourceInp   = this.row(el, '观看网址').text('https://...');
+    const ratingInp   = this.row(el, '个人评分（1–10）').number('');
+    const commentTa   = this.row(el, '即时短评').textarea('写下此刻的感受...');
 
-  private addAnimeFields() {
-    new Setting(this.contentEl)
-      .setName('已观看集数')
-      .addText(text => text.setPlaceholder('集数').onChange(v => (this.formValues.progress = v)));
-    new Setting(this.contentEl)
-      .setName('观看网址')
-      .addText(text => text.setPlaceholder('https://...').onChange(v => (this.formValues.source = v)));
-  }
-
-  private addBookFields() {
-    new Setting(this.contentEl)
-      .setName('书籍类型')
-      .addDropdown(dropdown => {
-        dropdown.addOption('manga', '漫画');
-        dropdown.addOption('lightnovel', '轻小说');
-        dropdown.addOption('novel', '小说');
-        dropdown.onChange(v => (this.formValues.subtype = v));
-      });
-    new Setting(this.contentEl)
-      .setName('当前卷数')
-      .addText(text => text.setPlaceholder('卷数').onChange(v => (this.formValues.volNum = v)));
-    new Setting(this.contentEl)
-      .setName('当前话数/章节')
-      .addText(text => text.setPlaceholder('话数').onChange(v => (this.formValues.unitNum = v)));
-    new Setting(this.contentEl)
-      .setName('阅读渠道')
-      .addDropdown(dropdown => {
-        dropdown.addOption('', '请选择');
-        for (const ch of BOOK_CHANNELS) dropdown.addOption(ch, ch);
-        dropdown.onChange(v => (this.formValues.channel = v));
-      });
-    new Setting(this.contentEl)
-      .setName('翻译版本')
-      .addDropdown(dropdown => {
-        dropdown.addOption('', '请选择');
-        for (const ver of BOOK_VERSIONS) dropdown.addOption(ver, ver);
-        dropdown.onChange(v => (this.formValues.version = v));
-      });
-  }
-
-  private addGameFields() {
-    new Setting(this.contentEl)
-      .setName('游玩平台')
-      .addDropdown(dropdown => {
-        dropdown.addOption('', '请选择');
-        for (const plat of GAME_PLATFORMS) dropdown.addOption(plat, plat);
-        dropdown.onChange(v => (this.formValues.platform = v));
-      });
-    new Setting(this.contentEl)
-      .setName('游玩时长（小时）')
-      .addText(text => text.setPlaceholder('例如 40.5').onChange(v => (this.formValues.hours = v)));
-    new Setting(this.contentEl)
-      .setName('当前进度')
-      .addText(text => text.setPlaceholder('进度描述').onChange(v => (this.formValues.progress = v)));
-  }
-
-  private addMusicFields() {
-    new Setting(this.contentEl)
-      .setName('收听平台')
-      .addDropdown(dropdown => {
-        dropdown.addOption('', '请选择');
-        for (const src of MUSIC_SOURCES) dropdown.addOption(src, src);
-        dropdown.onChange(v => (this.formValues.source = v));
-      });
-  }
-
-  private addRealFields() {
-    new Setting(this.contentEl)
-      .setName('已观看集数')
-      .addText(text => text.setPlaceholder('集数').onChange(v => (this.formValues.progress = v)));
-    new Setting(this.contentEl)
-      .setName('观看网址')
-      .addText(text => text.setPlaceholder('https://...').onChange(v => (this.formValues.source = v)));
-  }
-
-  private addRatingField() {
-    new Setting(this.contentEl)
-      .setName('个人评分')
-      .addDropdown(dropdown => {
-        dropdown.addOption('', '未评分');
-        for (let i = 1; i <= 10; i++) dropdown.addOption(String(i), String(i));
-        dropdown.onChange(v => (this.formValues.rating = v));
-      });
-  }
-
-  private addCommentField() {
-    new Setting(this.contentEl)
-      .setName('短评')
-      .addTextArea(textarea => textarea.setPlaceholder('记录当下的感受...').onChange(v => (this.formValues.comment = v)));
-  }
-
-  private handleSubmit() {
-    if (!this.formValues.status) {
-      new Notice('请选择状态');
-      return;
-    }
-    this.close();
-    this.onSubmit(this.buildSubjective());
-  }
-
-  private buildSubjective(): Subjective {
-    const status = this.formValues.status!; // 已经在 handleSubmit 中确保非空
-    const base = {
-      status,
-      rating: this.formValues.rating || '',
-      comment: this.formValues.comment || '',
-    };
-    const type = this.subjectData.typeKey;
-    if (type === 'anime') {
-      return { ...base, progress: this.formValues.progress || '', source: this.formValues.source || '' };
-    }
-    if (type === 'book') {
-      return {
-        ...base,
-        subtype: (this.formValues.subtype as BookSubtype) || 'manga',
-        volNum: this.formValues.volNum || '',
-        unitNum: this.formValues.unitNum || '',
-        channel: this.formValues.channel || '',
-        version: this.formValues.version || '',
+    this.submitRow(el, () => {
+      const result: AnimeSubjective = {
+        status:   statusSel.value,
+        progress: progressInp.value,
+        source:   sourceInp.value.trim(),
+        rating:   ratingInp.value,
+        comment:  commentTa.value.trim(),
       };
-    }
-    if (type === 'game') {
-      return {
-        ...base,
-        platform: (this.formValues.platform as GamePlatform) || 'PC',
-        hours: this.formValues.hours || '',
-        progress: this.formValues.progress || '',
-      };
-    }
-    if (type === 'music') {
-      return { ...base, source: this.formValues.source || '' };
-    }
-    // real
-    return { ...base, progress: this.formValues.progress || '', source: this.formValues.source || '' };
+      this.resolve(result);
+      this.close();
+    });
   }
 
-  private getTypeLabel(typeKey: SubjectData['typeKey']): string {
-    const labels: Record<SubjectData['typeKey'], string> = { anime: '动画', book: '书籍', game: '游戏', music: '音乐', real: '三次元' };
-    return labels[typeKey];
+  private buildBookForm(el: HTMLElement): void {
+    const subtypeLabel   = detectSubtypeLabel(this.data);
+    const subtypeSel     = this.row(el, '书籍类型').select(SUBTYPE_LABELS, subtypeLabel);
+    const statusSel      = this.row(el, '阅读状态').select(STATUS_OPTIONS.book, '想读');
+    const volInp         = this.row(el, '当前卷数').number('0');
+    const unitInp        = this.row(el, '当前话/章数').number('0');
+    const channelSel     = this.row(el, '阅读渠道').select(BOOK_CHANNELS, BOOK_CHANNELS[0] ?? '');
+    const versionSel     = this.row(el, '翻译版本').select(BOOK_VERSIONS, BOOK_VERSIONS[0] ?? '');
+    const ratingInp      = this.row(el, '个人评分（1–10）').number('');
+    const commentTa      = this.row(el, '即时短评').textarea('写下第一印象...');
+
+    this.submitRow(el, () => {
+      const result: BookSubjective = {
+        status:  statusSel.value,
+        subtype: SUBTYPE_LABEL_MAP[subtypeSel.value] ?? 'novel',
+        volNum:  volInp.value,
+        unitNum: unitInp.value,
+        channel: channelSel.value,
+        version: versionSel.value,
+        rating:  ratingInp.value,
+        comment: commentTa.value.trim(),
+      };
+      this.resolve(result);
+      this.close();
+    });
+  }
+
+  private buildGameForm(el: HTMLElement): void {
+    const statusSel   = this.row(el, '游玩状态').select(STATUS_OPTIONS.game, '想玩');
+    const platformSel = this.row(el, '游玩平台').select(GAME_PLATFORMS, 'Steam');
+    const hoursInp    = this.row(el, '游玩时长（小时）').number('0');
+    const progressInp = this.row(el, '当前进度').text('例：第一章');
+    const ratingInp   = this.row(el, '个人评分（1–10）').number('');
+    const commentTa   = this.row(el, '即时短评').textarea('写下游玩感受...');
+
+    this.submitRow(el, () => {
+      const result: GameSubjective = {
+        status:   statusSel.value,
+        platform: platformSel.value as GamePlatform,
+        hours:    hoursInp.value,
+        progress: progressInp.value.trim(),
+        rating:   ratingInp.value,
+        comment:  commentTa.value.trim(),
+      };
+      this.resolve(result);
+      this.close();
+    });
+  }
+
+  private buildMusicForm(el: HTMLElement): void {
+    const statusSel = this.row(el, '收听状态').select(STATUS_OPTIONS.music, '想听');
+    const sourceSel = this.row(el, '收听平台').select(MUSIC_SOURCES, MUSIC_SOURCES[0] ?? '');
+    const ratingInp = this.row(el, '个人评分（1–10）').number('');
+    const commentTa = this.row(el, '即时短评').textarea('写下收听感受...');
+
+    this.submitRow(el, () => {
+      const result: MusicSubjective = {
+        status:  statusSel.value,
+        source:  sourceSel.value,
+        rating:  ratingInp.value,
+        comment: commentTa.value.trim(),
+      };
+      this.resolve(result);
+      this.close();
+    });
+  }
+
+  private buildRealForm(el: HTMLElement): void {
+    const statusSel   = this.row(el, '观看状态').select(STATUS_OPTIONS.real, '想看');
+    const progressInp = this.row(el, '已观看集数').number('0');
+    const sourceInp   = this.row(el, '观看网址').text('https://...');
+    const ratingInp   = this.row(el, '个人评分（1–10）').number('');
+    const commentTa   = this.row(el, '即时短评').textarea('写下感受...');
+
+    this.submitRow(el, () => {
+      const result: RealSubjective = {
+        status:   statusSel.value,
+        progress: progressInp.value,
+        source:   sourceInp.value.trim(),
+        rating:   ratingInp.value,
+        comment:  commentTa.value.trim(),
+      };
+      this.resolve(result);
+      this.close();
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // DOM 构建工具（流式调用）
+  // ─────────────────────────────────────────────
+
+  /**
+   * 创建一行 label + 控件的包装行，返回控件构建器
+   */
+  private row(container: HTMLElement, label: string): RowBuilder {
+    const row = container.createEl('div', { cls: 'bangumi-input-row' });
+    row.createEl('label', { text: label });
+    return new RowBuilder(row);
+  }
+
+  /**
+   * 创建确认/取消按钮行
+   */
+  private submitRow(container: HTMLElement, onSubmit: () => void): void {
+    const btnRow = container.createEl('div', { cls: 'bangumi-confirm-btns' });
+
+    const cancelBtn = btnRow.createEl('button', { text: '取消' });
+    cancelBtn.addEventListener('click', () => {
+      this.resolve(null);
+      this.close();
+    });
+
+    const submitBtn = btnRow.createEl('button', {
+      text: '保存并建档',
+      cls: 'bangumi-confirm-ok',
+    });
+    submitBtn.addEventListener('click', onSubmit);
+  }
+}
+
+// ─────────────────────────────────────────────
+// 内部：行构建器（链式 DOM 辅助）
+// ─────────────────────────────────────────────
+
+class RowBuilder {
+  constructor(private readonly row: HTMLElement) {}
+
+  /** 创建 <select> 并返回元素本身 */
+  select(options: readonly string[], defaultVal: string): HTMLSelectElement {
+    const sel = this.row.createEl('select');
+    for (const opt of options) {
+      const el = sel.createEl('option', { text: opt, value: opt });
+      if (opt === defaultVal) el.selected = true;
+    }
+    return sel;
+  }
+
+  /** 创建 type="number" 的 <input> */
+  number(defaultVal: string): HTMLInputElement {
+    const inp = this.row.createEl('input', { type: 'number' });
+    inp.min = '0';
+    inp.value = defaultVal;
+    return inp;
+  }
+
+  /** 创建 type="text" 的 <input> */
+  text(placeholder: string): HTMLInputElement {
+    const inp = this.row.createEl('input', { type: 'text' });
+    inp.placeholder = placeholder;
+    return inp;
+  }
+
+  /** 创建 <textarea> */
+  textarea(placeholder: string): HTMLTextAreaElement {
+    const ta = this.row.createEl('textarea');
+    ta.placeholder = placeholder;
+    return ta;
   }
 }

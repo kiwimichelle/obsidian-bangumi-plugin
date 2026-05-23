@@ -1,87 +1,101 @@
 import { Notice } from 'obsidian';
 
+/** 通知自动消失的延迟（毫秒） */
+const DONE_TIMEOUT_MS  = 4000;
+const ERROR_TIMEOUT_MS = 8000;
+
 /**
- * 基于 Obsidian Notice API 的进度通知组件
+ * 轻量进度通知组件。
  *
- * 官方文档要点：
- * - `new Notice(message, timeout)` 创建通知，timeout=0 表示持久显示
- * - `Notice.hide()` 方法可手动关闭通知（Obsidian 0.15+ 支持）
- *
- * 设计：
- * - 初始通知持久显示（timeout=0）
- * - 每次更新时先 `hide()` 旧通知再创建新通知（保持屏幕整洁）
- * - `done()` / `error()` 显示最终消息并在指定延时后自动消失
- *
- * 使用示例：
+ * 用法示例：
  * ```ts
- * const progress = new ProgressNotice('正在构建索引...');
- * for await (const chunk of process) {
- *   progress.update(`已处理 ${processed}/${total} 行`);
- * }
- * progress.done('索引构建完成');
+ * const notice = new ProgressNotice('⏳ 正在下载封面...');
+ * notice.update('⏳ 正在写入笔记...');
+ * notice.done('✅ 已创建：葬送的芙莉莲');
  * ```
+ *
+ * 设计约束：
+ * - 不持有任何业务逻辑模块的引用，纯 UI 工具
+ * - 同一个实例只存在一个 Notice，调用 update/done/error 会替换文本
+ * - done/error 调用后实例自动进入 finished 状态，后续调用静默忽略
  */
 export class ProgressNotice {
-  private notice: Notice | null = null;
-  private baseMessage: string;
-  private hideTimeoutMs: number;
+	/** 当前 Obsidian Notice 实例 */
+	private notice: Notice;
 
-  /**
-   * @param initialMessage 初始消息（持久显示）
-   * @param hideTimeoutMs 完成/失败后自动隐藏的延时（毫秒），默认 3000
-   */
-  constructor(initialMessage: string, hideTimeoutMs = 3000) {
-    this.baseMessage = initialMessage;
-    this.hideTimeoutMs = hideTimeoutMs;
-    // 持久显示，timeout=0 表示不自动消失
-    this.notice = new Notice(initialMessage, 0);
-  }
+	/** 通知主容器的文字节点（用于原地更新） */
+	private textNode: Text;
 
-  /**
-   * 更新通知内容（替换当前显示的消息）
-   * @param message 新消息
-   */
-  update(message: string): void {
-    if (this.notice) {
-      this.notice.hide(); // 立即关闭旧通知
-    }
-    this.notice = new Notice(message, 0); // 创建新的持久通知
-  }
+	/** 是否已结束（done/error 调用后为 true） */
+	private finished = false;
 
-  /**
-   * 标记操作成功，显示完成消息并延时关闭
-   * @param message 完成消息（可选，默认使用初始消息 + "完成"）
-   */
-  done(message?: string): void {
-    if (this.notice) {
-      this.notice.hide();
-      this.notice = null;
-    }
-    const finalMsg = message ?? `${this.baseMessage} 完成`;
-    // 显示最终消息，指定超时后自动消失
-    new Notice(finalMsg, this.hideTimeoutMs);
-  }
+	/**
+	 * 创建并立即显示一条进度通知。
+	 *
+	 * @param initialMessage 初始消息文本，例如 '⏳ 正在下载封面...'
+	 * @param timeoutMs      自动消失时间（毫秒），默认 0 = 不自动消失，
+	 *                       由 done/error 触发消失
+	 */
+	constructor(initialMessage: string, timeoutMs = 0) {
+		// Notice 第二参数为 0 时不自动消失，方便我们手动控制
+		this.notice = new Notice('', timeoutMs);
 
-  /**
-   * 标记操作失败，显示错误消息并延时关闭
-   * @param message 错误消息（可选，默认使用初始消息 + "失败"）
-   */
-  error(message?: string): void {
-    if (this.notice) {
-      this.notice.hide();
-      this.notice = null;
-    }
-    const finalMsg = message ?? `${this.baseMessage} 失败`;
-    new Notice(finalMsg, this.hideTimeoutMs);
-  }
+		// noticeEl 是 Notice 暴露的 HTMLElement
+		const el = this.notice.noticeEl;
+		this.textNode = document.createTextNode(initialMessage);
+		el.appendChild(this.textNode);
+	}
 
-  /**
-   * 立即关闭通知（不显示完成/失败消息）
-   */
-  close(): void {
-    if (this.notice) {
-      this.notice.hide();
-      this.notice = null;
-    }
-  }
+	/**
+	 * 更新通知文本（进行中状态）。
+	 * 若通知已结束（done/error），此方法静默忽略。
+	 */
+	update(message: string): this {
+		if (this.finished) return this;
+		this.textNode.nodeValue = message;
+		return this;
+	}
+
+	/**
+	 * 标记操作成功完成，显示成功消息后自动消失。
+	 * 调用后实例进入 finished 状态，后续 update/done/error 均被忽略。
+	 *
+	 * @param message 成功消息，例如 '✅ 已创建：葬送的芙莉莲'
+	 */
+	done(message: string): void {
+		if (this.finished) return;
+		this.finished = true;
+		this.textNode.nodeValue = message;
+		// 替换为有超时的新 Notice（原 Notice 手动 hide）
+		this.notice.hide();
+		new Notice(message, DONE_TIMEOUT_MS);
+	}
+
+	/**
+	 * 标记操作失败，显示错误消息后自动消失（停留时间比成功更长）。
+	 * 调用后实例进入 finished 状态。
+	 *
+	 * @param message 错误消息，例如 '❌ 封面下载失败，已跳过'
+	 */
+	error(message: string): void {
+		if (this.finished) return;
+		this.finished = true;
+		this.textNode.nodeValue = message;
+		this.notice.hide();
+		new Notice(message, ERROR_TIMEOUT_MS);
+	}
+
+	/**
+	 * 立即隐藏通知（无论当前状态）。
+	 * 适用于用户取消操作等需要提前关闭的场景。
+	 */
+	hide(): void {
+		this.finished = true;
+		this.notice.hide();
+	}
+
+	/** 是否已结束（done/error/hide 后为 true） */
+	get isFinished(): boolean {
+		return this.finished;
+	}
 }
