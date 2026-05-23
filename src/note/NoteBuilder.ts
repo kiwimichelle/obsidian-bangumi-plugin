@@ -1,16 +1,25 @@
 import { App, TFile } from 'obsidian';
 import { getInfoboxValue } from '../core/WikiParser';
 import {
-  BangumiSettings, InfoboxEntry,
-  SubjectData, SubjectTypeKey, Subjective,
+  AnimeSubjective, BangumiSettings, BookSubjective,
+  GameSubjective, InfoboxEntry, MusicSubjective,
+  RealSubjective, SubjectData,
+  SubjectTypeKey, Subjective,
 } from '../types';
 import { BGM_WEB_BASE, DEFAULT_TEMPLATES } from '../constants';
 import {
-  buildEpsCheckboxes, buildInfoboxFrontmatter, buildInfoboxTableRows,
-  buildNetabaIframe, buildRelationLinks, buildRelationNames,
-  buildTagsYaml, renderTemplate,
+  buildCreditsFrontmatter,
+  buildCreditsTableRows,
+  buildEpsCheckboxes,
+  buildInfoboxFrontmatter,
+  buildInfoboxTableRows,
+  buildNetabaIframe,
+  buildRelationLinks,
+  buildRelationNames,
+  buildTagsYaml,
+  renderTemplate,
 } from './TemplateEngine';
-import { buildSubjectiveFields } from './Subjectivemapper';
+import type { DataManager } from '../core/DataManager';
 
 // ─────────────────────────────────────────────
 // 公开接口
@@ -29,10 +38,23 @@ export interface BuildResult {
 // NoteBuilder
 // ─────────────────────────────────────────────
 
+/**
+ * 笔记内容构建器
+ *
+ * Priority 4 新增：
+ * - 接受可选的 `dataManager` 参数，若存在则调 `getMainEpisodes()` 获取分集数据，
+ *   生成带集名和播出日期的 `eps_checkboxes`
+ *
+ * Priority 5 新增：
+ * - 若 `dataManager.personIndex` 就绪，生成 `credits_table_rows` 和
+ *   `credits_frontmatter` 槽位
+ */
 export class NoteBuilder {
   constructor(
     private readonly app: App,
     private readonly getSettings: () => BangumiSettings,
+    /** Priority 4/5: 数据管理器引用，用于获取分集和制作人员数据 */
+    private readonly dataManager?: DataManager,
   ) {}
 
   async build(
@@ -60,12 +82,18 @@ export class NoteBuilder {
   }
 
   private buildVars(
-    data: SubjectData,
-    subjective: Subjective,
+    data:           SubjectData,
+    subjective:     Subjective,
     coverLocalPath: string,
-    year: string,
-    season: string,
+    year:           string,
+    season:         string,
   ): Record<string, string> {
+    // Priority 4: 获取分集数据（若离线索引就绪）
+    const episodes = this.dataManager?.getMainEpisodes(data.id) ?? [];
+
+    // Priority 5: 获取制作人员数据（若离线索引就绪）
+    const credits  = this.dataManager?.getCredits(data.id) ?? [];
+
     return {
       // ── 基础 ───────────────────────────────────────────────────
       title:               data.name,
@@ -88,7 +116,8 @@ export class NoteBuilder {
       infobox_frontmatter: buildInfoboxFrontmatter(data.infobox),
 
       // ── 复杂槽位 ───────────────────────────────────────────────
-      eps_checkboxes:      buildEpsCheckboxes(data.eps),
+      // Priority 4: 优先使用离线分集数据，无则退化为纯序号
+      eps_checkboxes:      buildEpsCheckboxes(data.eps, episodes.length > 0 ? episodes : undefined),
       netaba_iframe:       buildNetabaIframe(data.id),
 
       // ── 关联 ───────────────────────────────────────────────────
@@ -102,8 +131,12 @@ export class NoteBuilder {
       artist:              getInfoboxValue(data.infobox, ['艺术家', '作曲', '演唱']),
       track_count:         getInfoboxValue(data.infobox, ['曲目数', '曲目']),
 
+      // ── Priority 5: 制作人员 ────────────────────────────────────
+      credits_table_rows:  buildCreditsTableRows(credits),
+      credits_frontmatter: buildCreditsFrontmatter(credits),
+
       // ── 主观输入 ───────────────────────────────────────────────
-      ...buildSubjectiveFields(data.typeKey, subjective),
+      ...buildSubjectiveVars(data.typeKey, subjective),
     };
   }
 }
@@ -139,4 +172,65 @@ function detectAdaptation(entries: InfoboxEntry[]): string {
   if (s.includes('游戏') || s.includes('game')  || s.includes('gal'))   return '游戏改编';
   if (s.includes('原创') || source === '-')                               return '原创';
   return source;
+}
+
+// ─────────────────────────────────────────────
+// 主观输入变量映射
+// ─────────────────────────────────────────────
+
+function buildSubjectiveVars(typeKey: SubjectTypeKey, subjective: Subjective): Record<string, string> {
+  const base: Record<string, string> = {
+    my_status:        subjective.status,
+    my_rating:        (subjective as AnimeSubjective).rating   ?? '',
+    my_comment:       (subjective as AnimeSubjective).comment  ?? '',
+    my_progress:      '',
+    my_source:        '',
+    my_channel:       '',
+    my_version:       '',
+    my_read_progress: '',
+    my_hours:         '',
+    my_platform:      '',
+    my_game_progress: '',
+    my_music_source:  '',
+  };
+
+  switch (typeKey) {
+    case 'anime': {
+      const s = subjective as AnimeSubjective;
+      base.my_progress = s.progress;
+      base.my_source   = s.source;
+      break;
+    }
+    case 'book': {
+      const s = subjective as BookSubjective;
+      base.my_channel  = s.channel;
+      base.my_version  = s.version;
+      const parts = [
+        s.volNum  ? `第${s.volNum}卷`  : '',
+        s.unitNum ? `第${s.unitNum}话` : '',
+      ].filter(Boolean);
+      base.my_read_progress = parts.join(' / ');
+      break;
+    }
+    case 'game': {
+      const s = subjective as GameSubjective;
+      base.my_hours         = s.hours;
+      base.my_platform      = s.platform;
+      base.my_game_progress = s.progress;
+      break;
+    }
+    case 'music': {
+      const s = subjective as MusicSubjective;
+      base.my_music_source = s.source;
+      break;
+    }
+    case 'real': {
+      const s = subjective as RealSubjective;
+      base.my_progress = s.progress;
+      base.my_source   = s.source;
+      break;
+    }
+  }
+
+  return base;
 }

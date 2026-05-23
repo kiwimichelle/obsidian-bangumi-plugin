@@ -355,4 +355,5 @@ export const DEFAULT_SETTINGS: BangumiSettings = {
     music: { archiveRoot: 'Bangumi/Music', archiveMode: 'flat', coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
     real: { archiveRoot: 'Bangumi/Real', archiveMode: 'season', coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
   },
+  hideNsfw: false,
 };

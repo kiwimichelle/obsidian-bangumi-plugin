@@ -62,14 +62,16 @@ export interface RawArchiveSubject {
   summary: string;
   /** 首播/发行日期，格式 YYYY-MM-DD，可能缺失 */
   date?: string;
-  /** 是否为 NSFW 内容 */
-  nsfw: boolean;
   /** 书籍卷数（非书籍类型为 0） */
   volumes: number;
   /** 总集数/话数（非视频类型为 0） */
   eps: number;
   /** BGM 用户标签列表 */
   tags: Array<{ name: string; count: number }>;
+  score?: number;
+  rank?: number;
+  meta_tags?: string[];
+  nsfw?: boolean;
 }
 
 /**
@@ -122,7 +124,17 @@ export interface ApiSubject {
    * 例：'漫画'、'小说'
    */
   platform?: string;
+  nsfw?: boolean;
 }
+
+/** 在线 API 返回的人物基础数据 */
+export interface ApiPerson {
+  id: number;
+  name: string;
+  type?: number;
+  career?: string[];
+}
+
 
 /**
  * Bangumi API 返回的关联条目（/v0/subjects/:id/subjects）
@@ -188,7 +200,8 @@ export interface SubjectData {
   id: number;
   /** 条目分类键 */
   typeKey: SubjectTypeKey;
-
+  /** 是否为 NSFW 内容 */
+  nsfw?: boolean;
   // ── 名称 ──
   /** 中文名称（可能与 nameOriginal 相同） */
   name: string;
@@ -247,6 +260,7 @@ export interface SubjectData {
    * - 'api'     : 来自 Bangumi 在线 API
    */
   source: 'cache' | 'archive' | 'api';
+  
 }
 
 // ─────────────────────────────────────────────
@@ -392,7 +406,8 @@ export interface BangumiSettings {
    * 0 表示从未构建
    */
   searchIndexBuiltAt: number;
-
+  /** 是否隐藏 NSFW 内容 */
+  hideNsfw: boolean;
   // ── 本地视频目录 ──
   /** 本地视频/下载根目录（仅桌面端有效） */
   videoRootDir: string;
@@ -468,6 +483,7 @@ export interface SearchResultItem {
   coverUrl: string;
   /** 数据来源 */
   source: SubjectData['source'];
+  nsfw?: boolean;
 }
 
 /**
@@ -519,4 +535,113 @@ export interface NamingResult {
    * - 'other' : 其他分类下已存在（需警告）
    */
   conflict: 'none' | 'same' | 'other';
+}
+/**
+ * ============================================================
+ * types.ts への追記内容（差分）
+ * ============================================================
+ * 既存の types.ts に以下の変更を加えてください。
+ *
+ * 1. RawArchiveSubject に score / rank / meta_tags / nsfw を追加
+ * 2. SubjectData に nsfw を追加
+ * 3. SearchResultItem に nsfw を追加
+ * 4. ApiSubject に nsfw を追加
+ * 5. BangumiSettings に hideNsfw を追加
+ * 6. EpisodeData 型を新規追加
+ * 7. PersonCredit 型を新規追加
+ * ============================================================
+ */
+
+// ─── 1. RawArchiveSubject（差分のみ） ─────────────────────
+
+// 既存の RawArchiveSubject インターフェースに以下を追加：
+//
+//   /** 評点（2023-07-27 以降の dump に含まれる） */
+//   score?: number;
+//   /** ランキング（2023-07-27 以降の dump に含まれる） */
+//   rank?: number;
+//   /** 公式メタタグ（2025-04-18 以降の dump に含まれる）*/
+//   meta_tags?: string[];
+//   /** NSFW フラグ */
+//   nsfw?: boolean;
+
+// ─── 2. SubjectData（差分のみ） ────────────────────────────
+
+// 既存の SubjectData インターフェースに以下を追加：
+//
+//   /** NSFW コンテンツかどうか（Priority 2） */
+//   nsfw?: boolean;
+
+// ─── 3. SearchResultItem（差分のみ） ───────────────────────
+
+// 既存の SearchResultItem インターフェースに以下を追加：
+//
+//   /** NSFW コンテンツかどうか（Priority 2） */
+//   nsfw?: boolean;
+
+// ─── 4. ApiSubject（差分のみ） ─────────────────────────────
+
+// 既存の ApiSubject インターフェースに以下を追加：
+//
+//   /** NSFW フラグ（API v0 レスポンスに含まれる） */
+//   nsfw?: boolean;
+
+// ─── 5. BangumiSettings（差分のみ） ────────────────────────
+
+// 既存の BangumiSettings インターフェースに以下を追加：
+//
+//   /**
+//    * NSFW コンテンツを検索結果から非表示にするか（Priority 2）
+//    * デフォルト: false（表示するが徽章付き）
+//    */
+//   hideNsfw: boolean;
+
+// ─── 6. EpisodeData（新規） ────────────────────────────────
+
+/**
+ * 分集データ（episodes.jsonlines の正規化後の形）
+ *
+ * Priority 4: EpisodeIndexBuilder が構築し、DataManager 経由で
+ * NoteBuilder に渡される。
+ */
+export interface EpisodeData {
+  /** 分集 ID */
+  id:        number;
+  /** 所属条目 ID */
+  subjectId: number;
+  /** 集タイプ: 0=正篇, 1=SP, 2=OP, 3=ED */
+  type:      number;
+  /** 集数序号（小数あり：SP は 0.5 など） */
+  sort:      number;
+  /** 原文タイトル */
+  name:      string;
+  /** 中文タイトル */
+  nameCn:    string;
+  /** 放送日（YYYY-MM-DD、不明は空文字） */
+  airdate:   string;
+  /** 尺（分钟）*/
+  duration:  string;
+  /** 简介（不明は空文字） */
+  desc:      string;
+}
+
+// ─── 7. PersonCredit（新規） ───────────────────────────────
+
+/**
+ * 制作人员クレジット
+ *
+ * Priority 5: PersonIndexBuilder が構築し、DataManager 経由で
+ * NoteBuilder に渡される。
+ */
+export interface PersonCredit {
+  /** 人物 ID */
+  personId:      number;
+  /** 中文名（あれば）または原文名 */
+  name:          string;
+  /** 原文名 */
+  nameOriginal:  string;
+  /** 職位 ID（POSITION_LABEL のキー） */
+  positionId:    number;
+  /** 職位表示ラベル（例：'导演', '声优'） */
+  positionLabel: string;
 }

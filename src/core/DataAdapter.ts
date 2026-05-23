@@ -26,10 +26,14 @@ export class DataAdapter {
       eps: raw.eps ?? 0,
       volumes: raw.volumes ?? 0,
       platform: '',
-      score: 0,
-      rank: 0,
+      // Priority 1: read score/rank from archive dump (available since 2023-07-27)
+      score: raw.score ?? 0,
+      rank: raw.rank ?? 0,
       coverUrl: '',
-      tags: pickTopTags(raw.tags),
+      // Priority 1: merge user tags + meta_tags (available since 2025-04-18)
+      tags: pickTopTags(raw.tags, raw.meta_tags),
+      // Priority 2: propagate nsfw flag from archive
+      nsfw: raw.nsfw ?? false,
       relations: [],
       relationsLoaded: false,
       source: 'archive',
@@ -57,6 +61,8 @@ export class DataAdapter {
       rank: raw.rating?.rank ?? 0,
       coverUrl,
       tags: pickTopTags(raw.tags),
+      // Priority 2: propagate nsfw flag from API
+      nsfw: raw.nsfw ?? false,
       relations: relations.map(normalizeRelation),
       relationsLoaded: true,
       source: 'api',
@@ -68,9 +74,30 @@ function mapTypeKey(type: number): SubjectTypeKey {
   return SUBJECT_TYPE_MAP[type] ?? 'anime';
 }
 
-function pickTopTags(tags: Array<{ name: string; count: number }> | undefined): string[] {
-  if (!tags || tags.length === 0) return [];
-  return [...tags]
+/**
+ * 合并用户 tags 和 meta_tags（维基人管理的公共标签），去重后按热度排序取前 15。
+ * meta_tags 没有 count，默认给 count=0，排在用户 tags 之后。
+ */
+function pickTopTags(
+  tags: Array<{ name: string; count: number }> | undefined,
+  metaTags?: string[],
+): string[] {
+  const merged: Array<{ name: string; count: number }> = [];
+
+  if (tags && tags.length > 0) {
+    merged.push(...tags);
+  }
+
+  if (metaTags && metaTags.length > 0) {
+    const existingNames = new Set(merged.map(t => t.name));
+    for (const name of metaTags) {
+      if (name && !existingNames.has(name)) {
+        merged.push({ name, count: 0 });
+      }
+    }
+  }
+
+  return [...merged]
     .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
     .slice(0, 15)
     .map(t => t.name)

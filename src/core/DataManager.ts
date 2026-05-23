@@ -1,6 +1,8 @@
 import type {
   BangumiSettings,
+  EpisodeData,
   InfoboxEntry,
+  PersonCredit,
   RawArchiveSubject,
   SearchQuery,
   SearchResponse,
@@ -8,14 +10,19 @@ import type {
   SubjectData,
 } from '../types';
 import { DEFAULT_PAGE_SIZE, SUBJECT_TYPE_MAP } from '../constants';
-import type { CacheManager } from './CacheManager';
-import type { IndexBuilder } from './IndexBuilder';
-import type { JsonlReader } from './JsonlReader';
-import type { SearchIndexBuilder } from './SearchIndexBuilder';
-import type { OnlineFetcher } from './OnlineFetcher';
-import type { BgmScraper } from './BgmScraper';
-import type { RelationFetcher } from './RelationFetcher';
-import { DataAdapter } from './DataAdapter';
+import type { CacheManager }          from './CacheManager';
+import type { IndexBuilder }          from './IndexBuilder';
+import type { JsonlReader }           from './JsonlReader';
+import type { SearchIndexBuilder }    from './SearchIndexBuilder';
+import type { OnlineFetcher }         from './OnlineFetcher';
+import type { BgmScraper }            from './BgmScraper';
+import type { RelationFetcher }       from './RelationFetcher';
+import * as path from 'path'; // 👉 确保引入了 path 模块
+import type { RelationIndexBuilder }  from './RelationIndexBuilder';
+import type { EpisodeIndexBuilder }   from './EpisodeindexBuilder';
+import type { PersonIndexBuilder }    from './PersonindexBuilder';
+import { DataAdapter }                from './DataAdapter';
+import type { ArchiveLocator }        from '../vault/ArchiveLocator'; // 用于解析绝对路径
 
 // ─────────────────────────────────────────────
 // 公共错误类型
@@ -38,13 +45,19 @@ export class SubjectNotFoundError extends Error {
 // ─────────────────────────────────────────────
 
 export interface DataManagerDeps {
-  cache: CacheManager;
-  index: IndexBuilder;
-  searchIndex: SearchIndexBuilder;
-  jsonl: JsonlReader;
-  fetcher: OnlineFetcher;
-  scraper: BgmScraper;
-  relations: RelationFetcher;
+  cache:         CacheManager;
+  index:         IndexBuilder;
+  searchIndex:   SearchIndexBuilder;
+  jsonl:         JsonlReader;
+  fetcher:       OnlineFetcher;
+  scraper:       BgmScraper;
+  relations:     RelationFetcher;
+  /** Priority 3: 离线关联索引（可选；未配置时降级到 RelationFetcher） */
+  relationIndex?: RelationIndexBuilder;
+  /** Priority 4: 离线分集索引（可选） */
+  episodeIndex?:  EpisodeIndexBuilder;
+  /** Priority 5: 离线制作人员索引（可选） */
+  personIndex?:   PersonIndexBuilder;
   /**
    * 已解析为绝对路径的 `bangumi.jsonl` 位置，由 main.ts 通过 ArchiveLocator
    * 注入。未配置 / 文件不可用时返回 null —— DataManager 据此跳过第②级。
@@ -52,6 +65,7 @@ export interface DataManagerDeps {
   getJsonlPath: () => string | null;
   /** 实时获取最新 settings（offlineMode 等运行时可变项）。 */
   getSettings: () => BangumiSettings;
+  archiveLocator: ArchiveLocator;
 }
 
 // ─────────────────────────────────────────────
@@ -68,35 +82,51 @@ export interface DataManagerDeps {
  *   RelationFetcher（API 拉关联）+ BgmScraper（网页补 infobox），
  *   完成后再次反哺。不阻塞 `getSubject` 的 resolve
  *
+ * Priority 3 新增：
+ * - archive 命中时若 `RelationIndexBuilder` 就绪，直接从本地索引填充 relations，
+ *   `relationsLoaded` 置 true，不再触发 RelationFetcher
+ *
  * 红线（违反就是 bug）：
  * - `getSubject` 全部未命中才 throw（`SubjectNotFoundError`），绝不静默返回 null
  * - 不持有任何 Obsidian Vault / Note 概念，纯数据层
  * - 不直接读 settings 字段，所有运行时配置走 `getSettings()` getter
  */
 export class DataManager {
-  private readonly cache: CacheManager;
-  private readonly index: IndexBuilder;
-  private readonly searchIndex: SearchIndexBuilder;
-  private readonly jsonl: JsonlReader;
-  private readonly fetcher: OnlineFetcher;
-  private readonly scraper: BgmScraper;
-  private readonly relations: RelationFetcher;
-  private readonly getJsonlPath: () => string | null;
-  private readonly getSettings: () => BangumiSettings;
+  private readonly cache:         CacheManager;
+  private readonly index:         IndexBuilder;
+  private readonly searchIndex:   SearchIndexBuilder;
+  private readonly jsonl:         JsonlReader;
+  private readonly fetcher:       OnlineFetcher;
+  private readonly scraper:       BgmScraper;
+  private readonly relations:     RelationFetcher;
+  private readonly relationIndex: RelationIndexBuilder | undefined;
+  private readonly episodeIndex:  EpisodeIndexBuilder  | undefined;
+  private readonly personIndex:   PersonIndexBuilder   | undefined;
+  private readonly getJsonlPath:  () => string | null;
+  private readonly getSettings:   () => BangumiSettings;
+  private readonly archiveLocator: ArchiveLocator;
+  
 
   /** 正在执行补全任务的条目 ID，去重避免短时间重复触发 */
   private readonly enriching = new Set<number>();
 
   constructor(deps: DataManagerDeps) {
-    this.cache = deps.cache;
-    this.index = deps.index;
-    this.searchIndex = deps.searchIndex;
-    this.jsonl = deps.jsonl;
-    this.fetcher = deps.fetcher;
-    this.scraper = deps.scraper;
-    this.relations = deps.relations;
-    this.getJsonlPath = deps.getJsonlPath;
-    this.getSettings = deps.getSettings;
+    this.cache         = deps.cache;
+    this.index         = deps.index;
+    this.searchIndex   = deps.searchIndex;
+    this.jsonl         = deps.jsonl;
+    this.fetcher       = deps.fetcher;
+    this.scraper       = deps.scraper;
+    this.relations     = deps.relations;
+    this.relationIndex = deps.relationIndex;
+    this.episodeIndex  = deps.episodeIndex;
+    this.personIndex   = deps.personIndex;
+    this.getJsonlPath  = deps.getJsonlPath;
+    this.getSettings   = deps.getSettings;
+    this.episodeIndex = deps.episodeIndex;
+    this.personIndex = deps.personIndex;
+    this.relationIndex = deps.relationIndex;
+    this.archiveLocator = deps.archiveLocator;
   }
 
   // ─────────────────────────────────────────────
@@ -111,13 +141,14 @@ export class DataManager {
    * ④ SubjectNotFoundError
    *
    * 命中 ② 或 ③ 后立即反哺缓存；命中 ② 后异步补全 relations + 网页 infobox。
+   * Priority 3: archive 命中且 RelationIndexBuilder 就绪时，直接填充 relations，
+   *             跳过网络补全。
    */
   async getSubject(id: number): Promise<SubjectData> {
     // ① 内存缓存
     const cached = this.cache.get(id);
     if (cached) {
-      // 旧缓存可能缺 relations（早期由 archive 反哺时关联还未补全）：
-      // fire-and-forget 异步补，不阻塞返回
+      // 旧缓存可能缺 relations：fire-and-forget 异步补，不阻塞返回
       if (!cached.relationsLoaded) this.scheduleEnrich(cached, false);
       return cached;
     }
@@ -125,10 +156,19 @@ export class DataManager {
     // ② 离线包
     const archiveHit = await this.tryArchive(id);
     if (archiveHit) {
-      // 反哺缓存（一次，让用户至少持有基础数据）
-      this.cache.set(id, archiveHit);
-      // 异步：补 relations + 网页 infobox，完成后再反哺一次
-      this.scheduleEnrich(archiveHit, true);
+      // Priority 3: 若离线关联索引已就绪，直接填充
+      if (this.relationIndex?.isReady()) {
+        archiveHit.relations     = this.relationIndex.getRelations(id);
+        archiveHit.relationsLoaded = true;
+        this.cache.set(id, archiveHit);
+        // 仍可选跑 scraper 补 infobox，但无需补 relations
+        this.scheduleEnrich(archiveHit, true, /* skipRelations */ true);
+      } else {
+        // 反哺缓存（一次，让用户至少持有基础数据）
+        this.cache.set(id, archiveHit);
+        // 异步：补 relations + 网页 infobox，完成后再反哺一次
+        this.scheduleEnrich(archiveHit, true);
+      }
       return archiveHit;
     }
 
@@ -136,9 +176,6 @@ export class DataManager {
     const apiData = await this.fetcher.fetchById(id);
     if (apiData) {
       this.cache.set(id, apiData);
-      // API 拉关联失败时 relationsLoaded=false（见 OnlineFetcher.fetchById），
-      // 留待 RelationFetcher 重试；scraper 仅在 API 缺关键字段时有意义，
-      // 此处 API 数据通常已完整，暂不触发，避免无谓抓站
       if (!apiData.relationsLoaded) this.scheduleEnrich(apiData, false);
       return apiData;
     }
@@ -147,46 +184,134 @@ export class DataManager {
     throw new SubjectNotFoundError(id);
   }
 
+/**
+   * 方案 A 核心：根据已有的 offlineDbPath 自动推导出同目录下其他数据包的路径，并执行构建
+   */
+  async buildAllOfflineIndices(onProgress?: (stage: string, lines: number) => void): Promise<void> {
+    // 💡 修复：1. 加上 await； 2. 去掉小括号里的传参
+    const absoluteDbPath = await this.archiveLocator.resolve();
+    
+    // 💡 修复：防空守卫（因为可能返回 string | null）
+    if (!absoluteDbPath) {
+      console.warn('[bangumi] 离线数据库路径未解析成功，放弃构建索引');
+      return;
+    }
+    
+    // 此时 absoluteDbPath 已被安全收窄为绝对路径 string 类型
+    const dbDir = path.dirname(absoluteDbPath);
+
+    const episodesPath       = path.join(dbDir, 'episodes.jsonlines');
+    const personsPath        = path.join(dbDir, 'persons.jsonlines');
+    const subjectPersonsPath = path.join(dbDir, 'subject-persons.jsonlines');
+    const relationsPath      = path.join(dbDir, 'subject-relations.jsonlines');
+
+    // 构建主条目
+    await this.index.build(absoluteDbPath, (lines) => onProgress?.('主条目索引', lines));
+    
+    if (this.episodeIndex) {
+      await this.episodeIndex.build(episodesPath, (lines) => onProgress?.('分集信息', lines));
+    }
+    
+    if (this.personIndex) {
+      await this.personIndex.build(personsPath, subjectPersonsPath, (lines) => onProgress?.('制作人员', lines));
+    }
+    
+    if (this.relationIndex) {
+      await this.relationIndex.build(relationsPath, (lines) => onProgress?.('关联条目', lines));
+    }
+
+    // 构建主搜索
+    await this.searchIndex.build(absoluteDbPath, (lines) => onProgress?.('搜索索引', lines));
+  }
+
+  // ─────────────────────────────────────────────
+  // Priority 4: 分集数据访问
+  // ─────────────────────────────────────────────
+
+  /**
+   * 获取条目的分集列表（离线索引）。
+   * episodeIndex 未就绪或条目无分集数据时返回空数组。
+   * 供 NoteBuilder 生成带分集信息的 eps_checkboxes。
+   */
+  getEpisodes(subjectId: number): EpisodeData[] {
+    if (!this.episodeIndex?.isReady()) return [];
+    return this.episodeIndex.getEpisodes(subjectId);
+  }
+
+  /**
+   * 获取正篇（type=0）分集列表。
+   */
+  getMainEpisodes(subjectId: number): EpisodeData[] {
+    if (!this.episodeIndex?.isReady()) return [];
+    return this.episodeIndex.getMainEpisodes(subjectId);
+  }
+
+  // ─────────────────────────────────────────────
+  // Priority 5: 制作人员数据访问
+  // ─────────────────────────────────────────────
+
+  /**
+   * 获取条目的制作人员列表（离线索引）。
+   * personIndex 未就绪时返回空数组。
+   */
+  getCredits(subjectId: number): PersonCredit[] {
+    if (!this.personIndex?.isReady()) return [];
+    return this.personIndex.getCredits(subjectId);
+  }
+
+  /**
+   * 获取按职位分组的制作人员。
+   */
+  getCreditsByPosition(subjectId: number): Map<string, PersonCredit[]> {
+    if (!this.personIndex?.isReady()) return new Map();
+    return this.personIndex.getCreditsByPosition(subjectId);
+  }
+
   // ─────────────────────────────────────────────
   // 主流程：关键词搜索
   // ─────────────────────────────────────────────
 
   /**
    * 关键词搜索：
-   * - 无 forceMode 时按 settings.offlineMode 自动决策；离线命中为 0 时回退在线
-   * - forceMode='offline'：强制离线，索引未就绪则抛错
-   * - forceMode='online'：强制在线，跳过离线索引
+   * - `offlineMode=true` 且离线索引就绪：优先走 SearchIndexBuilder 离线搜索；
+   *   命中数为 0 时**自动回退**到在线 API（避免离线索引太稀疏让用户抓瞎）
+   * - 否则：直接调 OnlineFetcher
    *
-   * @param query     搜索关键词与分页参数
-   * @param forceMode 由 UI 层显式指定的数据源模式（可选）
+   * Priority 2: 若 settings.hideNsfw=true，过滤掉 nsfw 条目。
+   *
+   * 返回的 `fromOffline` 字段供 UI 标记结果来源。
    */
-  async search(query: SearchQuery, forceMode?: 'offline' | 'online'): Promise<SearchResponse> {
-    const limit = query.limit > 0 ? query.limit : DEFAULT_PAGE_SIZE;
-
-    // 1. 如果 UI 显式强制走在线模式
-    if (forceMode === 'online') {
-      return this.fetcher.searchByKeyword(query);
-    }
-
-    // 2. 如果 UI 显式强制走离线模式
-    if (forceMode === 'offline') {
-      if (!this.searchIndex.isReady()) {
-        throw new Error('离线索引未就绪');
-      }
-      return this.searchOffline(query, limit);
-    }
-
-    // 3. 兜底逻辑：无强制指定时，按照 Setting 自动决策
-    const settings = this.getSettings();
+  async search(query: SearchQuery): Promise<SearchResponse> {
+    const settings   = this.getSettings();
+    const limit      = query.limit > 0 ? query.limit : DEFAULT_PAGE_SIZE;
     const useOffline = settings.offlineMode && this.searchIndex.isReady();
 
     if (useOffline) {
       const offline = await this.searchOffline(query, limit);
-      if (offline.list.length > 0) return offline;
+      if (offline.list.length > 0) return this.applyNsfwFilter(offline, settings);
       // 命中为 0 → 回退到在线（关键词可能不在离线包字典中）
     }
 
-    return this.fetcher.searchByKeyword(query);
+    const result = await this.fetcher.searchByKeyword(query);
+    return this.applyNsfwFilter(result, settings);
+  }
+
+  // ─────────────────────────────────────────────
+  // 内部：NSFW 过滤（Priority 2）
+  // ─────────────────────────────────────────────
+
+  /**
+   * 若 settings.hideNsfw 为 true，过滤搜索结果中的 NSFW 条目。
+   * total 随之调整（近似值；精确值需要知道全集合 nsfw 比例）。
+   */
+  private applyNsfwFilter(resp: SearchResponse, settings: BangumiSettings): SearchResponse {
+    if (!settings.hideNsfw) return resp;
+    const filtered = resp.list.filter(item => !item.nsfw);
+    if (filtered.length === resp.list.length) return resp;
+    // total 按过滤比例近似缩减，避免翻页出现空页
+    const ratio  = resp.list.length > 0 ? filtered.length / resp.list.length : 1;
+    const total  = Math.max(filtered.length, Math.round(resp.total * ratio));
+    return { ...resp, list: filtered, total };
   }
 
   // ─────────────────────────────────────────────
@@ -203,7 +328,7 @@ export class DataManager {
       ? await this.filterByType(allIds, query.typeFilter)
       : allIds;
 
-    const total = filtered.length;
+    const total  = filtered.length;
     const offset = Math.max(0, (query.page - 1) * limit);
     const pageIds = filtered.slice(offset, offset + limit);
 
@@ -219,7 +344,7 @@ export class DataManager {
     if (ids.length === 0) return [];
 
     const fromCache = new Map<number, SearchResultItem>();
-    const missing: number[] = [];
+    const missing:   number[] = [];
     for (const id of ids) {
       const cached = this.cache.get(id);
       if (cached) {
@@ -253,7 +378,7 @@ export class DataManager {
     const targetKey = SUBJECT_TYPE_MAP[typeFilter];
     if (!targetKey) return ids;
 
-    const kept: number[] = [];
+    const kept:      number[] = [];
     const needCheck: number[] = [];
     for (const id of ids) {
       const cached = this.cache.get(id);
@@ -275,8 +400,7 @@ export class DataManager {
   }
 
   /**
-   * 按 ID 列表批量读 jsonl。索引未就绪 / 路径不可用时返回空数组（视为离线包失效，
-   * 让外层走在线兜底，而不是 throw 打断搜索 UI）。
+   * 按 ID 列表批量读 jsonl。索引未就绪 / 路径不可用时返回空数组。
    */
   private async readArchiveRows(ids: number[]): Promise<Array<RawArchiveSubject | null>> {
     if (!this.index.isReady()) return [];
@@ -297,10 +421,6 @@ export class DataManager {
   // 内部：第②级 archive 命中
   // ─────────────────────────────────────────────
 
-  /**
-   * 尝试从离线包取条目。索引未就绪 / 路径无效 / 行号未命中 / 行损坏 / id 不一致
-   * 均视为未命中，返回 null（继续走第③级）。
-   */
   private async tryArchive(id: number): Promise<SubjectData | null> {
     if (!this.index.isReady()) return null;
     const lineNum = this.index.getLine(id);
@@ -321,20 +441,24 @@ export class DataManager {
 
   /**
    * fire-and-forget 触发补全任务，完成后视情况反哺缓存。
-   * - `data` 被直接 mutate（RelationFetcher 与本方法都按引用写）
-   * - 同一 ID 同时只跑一个补全任务，避免短时间多次 getSubject 叠加请求
    *
-   * @param data       要补全的条目（mutate 进行中）
-   * @param alsoScrape 是否同时跑 BgmScraper（仅 archive 来源建议为 true）
+   * @param data           要补全的条目
+   * @param alsoScrape     是否同时跑 BgmScraper（仅 archive 来源建议为 true）
+   * @param skipRelations  Priority 3：已由 RelationIndexBuilder 填充时传 true，
+   *                       跳过 RelationFetcher 网络调用
    */
-  private scheduleEnrich(data: SubjectData, alsoScrape: boolean): void {
+  private scheduleEnrich(
+    data:           SubjectData,
+    alsoScrape:     boolean,
+    skipRelations = false,
+  ): void {
     if (this.enriching.has(data.id)) return;
     this.enriching.add(data.id);
 
     void (async () => {
       let touched = false;
       try {
-        if (this.relations.needsEnrich(data)) {
+        if (!skipRelations && this.relations.needsEnrich(data)) {
           const ok = await this.relations.enrich(data);
           if (ok) touched = true;
         }
@@ -348,7 +472,6 @@ export class DataManager {
 
         if (touched) this.cache.set(data.id, data);
       } catch (err) {
-        // 兜底：补全失败绝不抛到顶层 Promise，避免污染未处理 rejection
         console.warn(`[bangumi] #${data.id} 补全任务异常`, err);
       } finally {
         this.enriching.delete(data.id);
@@ -363,29 +486,32 @@ export class DataManager {
 
 function toSearchItemFromData(data: SubjectData): SearchResultItem {
   return {
-    id: data.id,
-    name: data.name,
+    id:           data.id,
+    name:         data.name,
     nameOriginal: data.nameOriginal,
-    typeKey: data.typeKey,
-    year: (data.date ?? '').slice(0, 4),
-    score: data.score,
-    coverUrl: data.coverUrl,
-    source: data.source,
+    typeKey:      data.typeKey,
+    year:         (data.date ?? '').slice(0, 4),
+    score:        data.score,
+    coverUrl:     data.coverUrl,
+    // Priority 2: propagate nsfw flag through search results
+    nsfw:         data.nsfw ?? false,
+    source:       data.source,
   };
 }
 
 function toSearchItemFromRaw(raw: RawArchiveSubject): SearchResultItem {
   const typeKey = SUBJECT_TYPE_MAP[raw.type] ?? 'anime';
-  const name = raw.name_cn?.trim() || raw.name;
+  const name    = raw.name_cn?.trim() || raw.name;
   return {
-    id: raw.id,
+    id:           raw.id,
     name,
     nameOriginal: raw.name,
     typeKey,
-    year: (raw.date ?? '').slice(0, 4),
-    score: 0,
-    coverUrl: '',
-    source: 'archive',
+    year:         (raw.date ?? '').slice(0, 4),
+    score:        raw.score ?? 0,
+    coverUrl:     '',
+    nsfw:         raw.nsfw ?? false,
+    source:       'archive',
   };
 }
 
@@ -395,8 +521,8 @@ function toSearchItemFromRaw(raw: RawArchiveSubject): SearchResultItem {
  * 返回是否真有更新。
  */
 function mergeMissingInfobox(existing: InfoboxEntry[], extra: InfoboxEntry[]): boolean {
-  const known = new Set(existing.map(e => e.key));
-  let touched = false;
+  const known   = new Set(existing.map(e => e.key));
+  let touched   = false;
   for (const entry of extra) {
     if (!known.has(entry.key)) {
       existing.push(entry);

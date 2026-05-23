@@ -11,6 +11,9 @@ import { OnlineFetcher } from './core/OnlineFetcher';
 import { BgmScraper } from './core/BgmScraper';
 import { RelationFetcher } from './core/RelationFetcher';
 import { DataManager } from './core/DataManager';
+import { EpisodeIndexBuilder } from './core/EpisodeindexBuilder'; // 检查你本地文件名大小写
+import { PersonIndexBuilder } from './core/PersonindexBuilder';   // 检查你本地文件名大小写
+import { RelationIndexBuilder } from './core/RelationIndexBuilder';
 
 // ── 笔记与归档 ──
 import { ArchiveLocator } from './vault/ArchiveLocator';
@@ -29,6 +32,12 @@ import { OnboardingModal } from './ui/OnboardingModal';
 
 export default class BangumiPlugin extends Plugin {
   settings!: BangumiSettings;
+  dataManager!: DataManager;
+  
+  // 👉 声明新增的构建器属性
+  episodeIndexBuilder!: EpisodeIndexBuilder;
+  personIndexBuilder!: PersonIndexBuilder;
+  relationIndexBuilder!: RelationIndexBuilder;
 
   // ── 核心单例 ──
   private cacheManager!: CacheManager;
@@ -39,7 +48,6 @@ export default class BangumiPlugin extends Plugin {
   private bgmScraper!: BgmScraper;
   private relationFetcher!: RelationFetcher;
   private archiveLocator!: ArchiveLocator;
-  private dataManager!: DataManager;
 
   async onload() {
     await this.loadSettings();
@@ -53,6 +61,11 @@ export default class BangumiPlugin extends Plugin {
     this.bgmScraper = new BgmScraper();
     this.relationFetcher = new RelationFetcher(this.onlineFetcher);
     this.archiveLocator = new ArchiveLocator(this.app, () => this.settings);
+    // 👉 补齐第二个参数 this.manifest.dir
+    // 💡 修复：加上 ?? '' 确保类型绝对是 string
+    this.episodeIndexBuilder = new EpisodeIndexBuilder(this.app, this.manifest.dir ?? '');
+    this.personIndexBuilder = new PersonIndexBuilder(this.app, this.manifest.dir ?? '');
+    this.relationIndexBuilder = new RelationIndexBuilder(this.app, this.manifest.dir ?? '');
 
     // 预加载缓存和解析本地路径
     await this.cacheManager.load();
@@ -74,19 +87,22 @@ export default class BangumiPlugin extends Plugin {
       relations: this.relationFetcher,
       getJsonlPath: () => this.archiveLocator.getCachedPath(),
       getSettings: () => this.settings,
+      episodeIndex: this.episodeIndexBuilder,
+      personIndex: this.personIndexBuilder,
+      relationIndex: this.relationIndexBuilder,
+      archiveLocator: this.archiveLocator
     });
 
     // 3. 注册 UI 及交互
-    this.addSettingTab(
-      new BangumiSettingTab(
-        this.app,
-        this,
-        () => this.settings,
-        () => this.saveSettings(),
-        this.indexBuilder,
-        this.searchIndexBuilder
-      )
-    );
+    // 👉 恢复为标准的 6 个参数，并补齐类成员的 this. 前缀
+  this.addSettingTab(new BangumiSettingTab(
+  this.app,
+  this,
+  () => this.settings,
+  () => this.saveSettings(),
+  this.indexBuilder,        // 👉 修复：加上 this.
+  this.searchIndexBuilder   // 👉 修复：加上 this.
+   ));
 
     this.addRibbonIcon('tv', 'Bangumi 搜索', () => this.openSearchModal());
 
