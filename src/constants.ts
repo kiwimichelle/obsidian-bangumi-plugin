@@ -190,12 +190,7 @@ export const DEFAULT_ANIME_TEMPLATE = `**已观看集数**： {{my_progress}}
 |:--|
 {{credits_cast}}
 
-## 系列关联
-| 类型 | 条目 |
-|:--|:--|
-| 所属系列 | {{related_series_link}} |
-| 续集 | {{sequel_link}} |
-| 前传 | {{prequel_link}} |
+{{series_section}}
 
 ---
 

@@ -74,6 +74,9 @@ export default class BangumiPlugin extends Plugin {
     await this.cacheManager.load();
     await this.indexBuilder.load();
     await this.searchIndexBuilder.load();
+    await this.episodeIndexBuilder.load();   // ✅ 新增
+    await this.personIndexBuilder.load();    // ✅ 新增
+    await this.relationIndexBuilder.load();  // ✅ 新增
     await this.archiveLocator.resolve();
 
     // 检测离线索引是否已过期（数据包被替换但未重建索引）

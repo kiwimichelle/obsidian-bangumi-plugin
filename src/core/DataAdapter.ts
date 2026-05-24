@@ -14,6 +14,9 @@ export class DataAdapter {
   static fromArchive(raw: RawArchiveSubject): SubjectData {
     const typeKey = mapTypeKey(raw.type);
     const name = raw.name_cn?.trim() || raw.name;
+     const coverUrl = raw.image
+    ? (raw.image.startsWith('http') ? raw.image : `https://lain.bgm.tv${raw.image}`)
+    : '';
 
     return {
       id: raw.id,
@@ -29,7 +32,7 @@ export class DataAdapter {
       // Priority 1: read score/rank from archive dump (available since 2023-07-27)
       score: raw.score ?? 0,
       rank: raw.rank ?? 0,
-      coverUrl: '',
+       coverUrl, 
       // Priority 1: merge user tags + meta_tags (available since 2025-04-18)
       tags: pickTopTags(raw.tags, raw.meta_tags),
       // Priority 2: propagate nsfw flag from archive

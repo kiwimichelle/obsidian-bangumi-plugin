@@ -1,0 +1,45 @@
+name: 自动发布版本
+
+# 触发条件：当你推送一个以 v 开头的标签（如 v1.0.0, v1.2.3-alpha）时触发
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置 Node.js 环境（如果你的插件需要编译）
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm' # 如果用 pnpm 或 yarn 可以换掉
+
+      # 3. 安装依赖并编译产物
+      - name: Install dependencies & Build
+        run: |
+          npm install
+          npm run build # 确保你的 package.json 里有 build 脚本（比如用 esbuild 打包）
+
+      # 4. 自动创建 Release 并上传打包产物
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # 自动根据 Commit 历史生成变更日志
+          generate_release_notes: true
+          # 动态获取当前的 Tag 名称作为 Release 的名字
+          name: Release ${{ github.ref_name }}
+          # 要上传到 Release 的产物文件（一行一个，支持通配符）
+          files: |
+            main.js
+            manifest.json
+            styles.css
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub 自动生成的令牌，无需手动配置

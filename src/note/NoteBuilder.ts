@@ -4,7 +4,7 @@ import {
   AnimeSubjective, BangumiSettings, BookSubjective,
   GameSubjective, InfoboxEntry, MusicSubjective,
   RealSubjective, SubjectData,
-  SubjectTypeKey, Subjective,
+  SubjectTypeKey, Subjective,SubjectRelation,
 } from '../types';
 import { BGM_WEB_BASE, DEFAULT_TEMPLATES } from '../constants';
 import {
@@ -16,7 +16,6 @@ import {
   buildInfoboxTableRows,
   buildNetabaIframe,
   buildRelationLinks,
-  buildRelationNames,
   buildTagsYaml,
   renderTemplate,
 } from './TemplateEngine';
@@ -118,10 +117,9 @@ private buildVars(
     netaba_iframe:       buildNetabaIframe(data.id),
 
     // ── 关联 ───────────────────────────────────────────────────
-    related_series:      buildRelationNames(data.relations, '系列'),
-    related_series_link: buildRelationLinks(data.relations, '系列'),
-    sequel_link:         buildRelationLinks(data.relations, '续集'),
-    prequel_link:        buildRelationLinks(data.relations, '前传'),
+    series_section:      buildSeriesSection(data.relations),
+    credits_main:        buildCreditsMain(credits),
+    credits_cast:        buildCreditsCast(credits),
 
     // ── 分类特有 ───────────────────────────────────────────────
     adaptation:          data.typeKey === 'anime' ? detectAdaptation(data.infobox) : '',
@@ -129,8 +127,6 @@ private buildVars(
     track_count:         getInfoboxValue(data.infobox, ['曲目数', '曲目']),
 
     // ── 制作人员（拆分为主创和声优）────────────────────────────
-    credits_main:        buildCreditsMain(credits),
-    credits_cast:        buildCreditsCast(credits),
     credits_frontmatter: buildCreditsFrontmatter(credits),
 
     // ── 主观输入 ───────────────────────────────────────────────
@@ -230,4 +226,18 @@ function buildSubjectiveVars(typeKey: SubjectTypeKey, subjective: Subjective): R
   }
 
   return base;
+}
+function buildSeriesSection(relations: SubjectRelation[]): string {
+  const series  = buildRelationLinks(relations, '系列');
+  const sequel  = buildRelationLinks(relations, '续集');
+  const prequel = buildRelationLinks(relations, '前传');
+
+  if (!series && !sequel && !prequel) return '';
+
+  const rows: string[] = [];
+  if (series)  rows.push(`| 所属系列 | ${series} |`);
+  if (sequel)  rows.push(`| 续集 | ${sequel} |`);
+  if (prequel) rows.push(`| 前传 | ${prequel} |`);
+
+  return `## 系列关联\n| 类型 | 条目 |\n|:--|:--|\n${rows.join('\n')}`;
 }
