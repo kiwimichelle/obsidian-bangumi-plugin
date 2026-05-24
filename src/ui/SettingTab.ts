@@ -3,17 +3,17 @@ import type { BangumiSettings, SubjectTypeKey, ArchiveMode, TemplateSource, Over
 import { SUBJECT_TYPE_LABEL, DEFAULT_TEMPLATES } from '../constants';
 import { IndexProgressModal } from './IndexProgressModal';
 import { renderTemplate, buildPreviewVars } from '../note/TemplateEngine';
-import type { IndexBuilder } from '../core/IndexBuilder';
-import type { SearchIndexBuilder } from '../core/SearchIndexBuilder';
+import type { DataManager } from '../core/DataManager';   // ✅ 改为引用 DataManager
+import type { OfflineDbPaths } from '../types';
+import { DEFAULT_OFFLINE_DB_PATHS } from '../constants';
 
 export class BangumiSettingTab extends PluginSettingTab {
   constructor(
     app: App,
     plugin: Plugin,
-    private readonly getSettings: () => BangumiSettings,
+    private readonly getSettings:  () => BangumiSettings,
     private readonly saveSettings: () => Promise<void>,
-    private readonly indexBuilder: IndexBuilder,
-    private readonly searchIndexBuilder: SearchIndexBuilder
+    private readonly dataManager:  DataManager,           // ✅ 替换
   ) {
     super(app, plugin);
   }
@@ -59,81 +59,104 @@ export class BangumiSettingTab extends PluginSettingTab {
   }
 
   private renderDatabaseDashboard(container: HTMLElement, settings: BangumiSettings) {
-    container.createEl('h3', { text: '📦 离线检索库' });
-    const dashboard = container.createEl('div', { cls: 'bgm-dashboard-card' });
+  container.createEl('h3', { text: '📦 离线数据包配置' });
+  const dashboard = container.createEl('div', { cls: 'bgm-dashboard-card' });
 
-    // 系统路径输入（支持库外任意位置）
-    const fileSetting = new Setting(dashboard)
-      .setName('离线数据包路径 (.jsonl / .jsonlines)')
-      .setDesc('支持绝对路径或相对于 vault 根目录的路径。数据包体积较大，推荐存放在 vault 以外的任意目录。')
+  // 确保结构完整
+  if (!settings.offlineDbPaths) {
+    settings.offlineDbPaths = { ...DEFAULT_OFFLINE_DB_PATHS };
+  }
+
+  const pathConfigs: Array<{
+    key:      keyof OfflineDbPaths;
+    label:    string;
+    desc:     string;
+    required: boolean;
+  }> = [
+    { key: 'subject',        label: '主条目',     desc: 'subject.jsonlines（必须，约 300MB+）',              required: true  },
+    { key: 'episodes',       label: '分集信息',   desc: 'episodes.jsonlines（可选，启用分集 checkbox）',      required: false },
+    { key: 'persons',        label: '人物信息',   desc: 'persons.jsonlines（可选，与条目人员配套使用）',      required: false },
+    { key: 'subjectPersons', label: '条目人员',   desc: 'subject-persons.jsonlines（可选，与人物信息配套）', required: false },
+    { key: 'relations',      label: '条目关联',   desc: 'subject-relations.jsonlines（可选，启用关联索引）', required: false },
+  ];
+
+  for (const cfg of pathConfigs) {
+    const s = new Setting(dashboard)
+      .setName(`${cfg.required ? '🔴' : '🔵'} ${cfg.label}`)
+      .setDesc(cfg.desc)
       .addText(text => {
-        text.setPlaceholder('/Users/you/Downloads/subject.jsonlines')
-            .setValue(settings.offlineDbPath)
+        text.setPlaceholder('/path/to/' + cfg.desc.split('（')[0])
+            .setValue(settings.offlineDbPaths[cfg.key])
             .onChange(async (val) => {
-              settings.offlineDbPath = val.trim();
+              settings.offlineDbPaths[cfg.key] = val.trim();
               await this.saveSettings();
             });
         text.inputEl.style.width = '100%';
       });
 
-    // 桌面端：用 Electron 文件选择器浏览系统任意位置
     if (Platform.isDesktop) {
-      fileSetting.addButton(btn => btn
-        .setButtonText('📂 浏览…')
+      s.addButton(btn => btn
+        .setButtonText('📂')
+        .setTooltip('浏览文件')
         .onClick(() => {
           try {
-             
-             
             const { remote } = (window as any).require('electron');
             const paths = remote.dialog.showOpenDialogSync(remote.getCurrentWindow(), {
-              title: '选择 Bangumi 离线数据包',
+              title:   `选择 ${cfg.label} 数据包`,
               filters: [
                 { name: 'JSONL 数据包', extensions: ['jsonl', 'jsonlines', 'json'] },
-                { name: '所有文件', extensions: ['*'] },
+                { name: '所有文件',     extensions: ['*'] },
               ],
               properties: ['openFile'],
             });
             if (paths && paths.length > 0) {
-              settings.offlineDbPath = paths[0]!;
+              settings.offlineDbPaths[cfg.key] = paths[0]!;
               void this.saveSettings().then(() => this.display());
             }
           } catch {
-            new Notice('⚠️ 文件选择器不可用，请手动粘贴完整路径。');
+            new Notice('⚠️ 文件选择器不可用，请手动粘贴路径。');
           }
         })
       );
     }
-
-    const isReady = settings.offlineDbPath && settings.searchIndexBuiltAt > 0;
-    const statusRow = dashboard.createEl('div', { cls: 'bgm-dashboard-status' });
-    const indexDate = settings.indexBuiltAt 
-      ? new Date(settings.indexBuiltAt).toLocaleString() 
-      : '尚未构建';
-    statusRow.createEl('div', { text: `📊 索引状态：${isReady ? '✅ 已就绪' : '⚠️ 未完成'}`, cls: 'bgm-status-item' });
-    statusRow.createEl('div', { text: `⏱️ 最后构建：${indexDate}`, cls: 'bgm-status-item bgm-text-muted' });
-
-    new Setting(dashboard)
-      .setName('重建检索缓存')
-      .setDesc('当替换了新的数据包文件后，需要重新构建索引。')
-      .addButton(btn => btn
-        .setButtonText('🔄 立即构建')
-        .setCta()
-        .setDisabled(!settings.offlineDbPath)
-        .onClick(() => {
-          IndexProgressModal.buildAll(
-            this.app, 
-            settings.offlineDbPath, 
-            this.indexBuilder, 
-            this.searchIndexBuilder,
-            () => {
-              settings.indexBuiltAt = Date.now();
-              settings.searchIndexBuiltAt = Date.now();
-              this.saveSettings().then(() => this.display());
-            }
-          );
-        })
-      );
   }
+
+  // 状态行
+  const isReady   = !!settings.offlineDbPaths.subject && settings.searchIndexBuiltAt > 0;
+  const indexDate = settings.indexBuiltAt
+    ? new Date(settings.indexBuiltAt).toLocaleString()
+    : '尚未构建';
+  const statusRow = dashboard.createEl('div', { cls: 'bgm-dashboard-status' });
+  statusRow.createEl('div', {
+    text: `📊 索引状态：${isReady ? '✅ 已就绪' : '⚠️ 未完成'}`,
+    cls:  'bgm-status-item',
+  });
+  statusRow.createEl('div', {
+    text: `⏱️ 最后构建：${indexDate}`,
+    cls:  'bgm-status-item bgm-text-muted',
+  });
+
+  new Setting(dashboard)
+    .setName('重建检索索引')
+    .setDesc('替换数据包后需要重建。已配置的数据包会全部参与构建，未配置的自动跳过。')
+    .addButton(btn => btn
+      .setButtonText('🔄 立即构建')
+      .setCta()
+      .setDisabled(!settings.offlineDbPaths.subject)
+      .onClick(() => {
+        IndexProgressModal.buildAll(
+          this.app,
+          settings.offlineDbPaths.subject,
+          this.dataManager,
+          () => {
+            settings.indexBuiltAt       = Date.now();
+            settings.searchIndexBuiltAt = Date.now();
+            void this.saveSettings().then(() => this.display());
+          },
+        );
+      })
+    );
+}
 
   private renderCategorySettings(container: HTMLElement, settings: BangumiSettings) {
     container.createEl('h3', { text: '📂 分类归档与模板' });

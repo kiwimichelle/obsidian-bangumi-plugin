@@ -32,17 +32,25 @@ export class VaultHelper {
    * 确保目录存在，不存在则逐级创建
    */
   static async ensureFolder(app: App, path: string): Promise<void> {
-    const parts = path.split('/');
-    let current = '';
+  const parts = path.split('/');
+  let current = '';
 
-    for (const part of parts) {
-      if (!part) continue;
-      current = current ? `${current}/${part}` : part;
-      
-      const folderExists = app.vault.getAbstractFileByPath(current);
-      if (!folderExists) {
-        await app.vault.createFolder(current);
+  for (const part of parts) {
+    if (!part) continue;
+    current = current ? `${current}/${part}` : part;
+
+    // 内存缓存检查（快速路径）
+    if (app.vault.getAbstractFileByPath(current)) continue;
+
+    try {
+      await app.vault.createFolder(current);
+    } catch (e) {
+      // ✅ 修复：文件夹已存在时忽略（并发调用或缓存滞后的情况）
+      if (e instanceof Error && e.message.contains('already exists')) {
+        continue;
       }
+      throw e;
     }
   }
+}
 }

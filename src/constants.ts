@@ -1,4 +1,4 @@
-import { BookSubtype, GamePlatform, SubjectTypeKey } from './types';
+import type { BookSubtype, GamePlatform, SubjectTypeKey, OfflineDbPaths } from './types';
 import type { BangumiSettings } from './types';
 
 // ─────────────────────────────────────────────
@@ -339,21 +339,29 @@ export const DEFAULT_TEMPLATES: Record<SubjectTypeKey, string> = {
   music: DEFAULT_MUSIC_TEMPLATE,
   real:  DEFAULT_REAL_TEMPLATE,
 };
+export const DEFAULT_OFFLINE_DB_PATHS: OfflineDbPaths = {
+  subject:        '',
+  episodes:       '',
+  persons:        '',
+  subjectPersons: '',
+  relations:      '',
+};
 
 export const DEFAULT_SETTINGS: BangumiSettings = {
-  token: '',
-  offlineDbPath: '',
-  offlineMode: false,
-  indexBuiltAt: 0,
+  token:              '',
+  offlineDbPath:      '',           // 保留旧字段，迁移兼容用
+  offlineDbPaths:     { ...DEFAULT_OFFLINE_DB_PATHS },
+  offlineMode:        false,
+  indexBuiltAt:       0,
   searchIndexBuiltAt: 0,
-  videoRootDir: '',
-  createVideoDir: false,
+  hideNsfw:           false,
+  videoRootDir:       '',
+  createVideoDir:     false,
   subjectTypes: {
     anime: { archiveRoot: 'Bangumi/Anime', archiveMode: 'season', coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
-    book: { archiveRoot: 'Bangumi/Book', archiveMode: 'flat', coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
-    game: { archiveRoot: 'Bangumi/Game', archiveMode: 'flat', coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
-    music: { archiveRoot: 'Bangumi/Music', archiveMode: 'flat', coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
-    real: { archiveRoot: 'Bangumi/Real', archiveMode: 'season', coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
+    book:  { archiveRoot: 'Bangumi/Book',  archiveMode: 'flat',   coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
+    game:  { archiveRoot: 'Bangumi/Game',  archiveMode: 'flat',   coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
+    music: { archiveRoot: 'Bangumi/Music', archiveMode: 'flat',   coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
+    real:  { archiveRoot: 'Bangumi/Real',  archiveMode: 'season', coverPath: 'assets/covers', templateSource: 'default', templateFile: '', overwriteMode: 'ask' },
   },
-  hideNsfw: false,
 };

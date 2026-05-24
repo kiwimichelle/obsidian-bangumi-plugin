@@ -1,6 +1,8 @@
 import { Plugin, Notice, Modal, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS } from './constants';
 import type { BangumiSettings } from './types';
+import { DEFAULT_OFFLINE_DB_PATHS } from './constants';
+
 
 // ── 核心调度 ──
 import { CacheManager } from './core/CacheManager';
@@ -51,6 +53,7 @@ export default class BangumiPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    await this.migrateSettings();
 
     // 1. 初始化核心基础设施
     this.cacheManager = new CacheManager(this.app, this.manifest.dir!);
@@ -95,14 +98,14 @@ export default class BangumiPlugin extends Plugin {
 
     // 3. 注册 UI 及交互
     // 👉 恢复为标准的 6 个参数，并补齐类成员的 this. 前缀
-  this.addSettingTab(new BangumiSettingTab(
-  this.app,
-  this,
-  () => this.settings,
-  () => this.saveSettings(),
-  this.indexBuilder,        // 👉 修复：加上 this.
-  this.searchIndexBuilder   // 👉 修复：加上 this.
-   ));
+ // src/main.ts — addSettingTab 调用处
+    this.addSettingTab(new BangumiSettingTab(
+     this.app,
+     this,
+    () => this.settings,
+    () => this.saveSettings(),
+    this.dataManager,          // ✅ 只传 dataManager，不再传两个 builder
+    ));
 
     this.addRibbonIcon('tv', 'Bangumi 搜索', () => this.openSearchModal());
 
@@ -116,15 +119,36 @@ export default class BangumiPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       if (!this.settings.offlineDbPath && this.settings.indexBuiltAt === 0) {
         void OnboardingModal.prompt(
-          this.app,
-          () => this.settings,
-          () => this.saveSettings(),
-          this.indexBuilder,
-          this.searchIndexBuilder
-        );
+  this.app,
+  () => this.settings,
+  () => this.saveSettings(),
+  this.dataManager,            // ✅ 传 dataManager
+);
       }
     });
   }
+
+  /** 旧版单路径 → 新版多路径结构迁移 */
+private async migrateSettings(): Promise<void> {
+  const s = this.settings;
+  // 旧字段有值，新字段 subject 为空 → 自动迁移
+  if (s.offlineDbPath && !s.offlineDbPaths?.subject) {
+    s.offlineDbPaths = {
+      subject:        s.offlineDbPath,
+      episodes:       '',
+      persons:        '',
+      subjectPersons: '',
+      relations:      '',
+    };
+    await this.saveSettings();
+    console.log('[bangumi] 已自动迁移旧版路径配置');
+  }
+  // 确保结构完整（Object.assign 只补顶层字段，嵌套对象需单独处理）
+  if (!s.offlineDbPaths) {
+    s.offlineDbPaths = { ...DEFAULT_OFFLINE_DB_PATHS };
+    await this.saveSettings();
+  }
+}
 
   async onunload() {
     // 确保任何在内存中的用户修改安全落盘
@@ -198,7 +222,7 @@ export default class BangumiPlugin extends Plugin {
     }
 
     // 4. 构建渲染正文
-    const builder = new NoteBuilder(this.app, () => this.settings);
+    const builder = new NoteBuilder(this.app, () => this.settings, this.dataManager);
     const buildResult = await builder.build(data, subjective, coverLocalPath);
     let finalContent = buildResult.content;
 

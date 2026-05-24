@@ -136,14 +136,12 @@ export class CacheManager {
    * 避免"await 完成后、赋值前"的窗口期导致两个 doWrite() 并发执行。
    */
   private writeToDisk(): Promise<void> {
-    this.writing = (this.writing ?? Promise.resolve())
-      .then(() => this.doWrite())
-      .finally(() => {
-        this.writing = null;
-      });
-    return this.writing;
-  }
-
+  const next = (this.writing ?? Promise.resolve()).then(() => this.doWrite());
+  this.writing = next.finally(() => {
+    if (this.writing === next) this.writing = null;
+  });
+  return this.writing;
+}
   private async doWrite(): Promise<void> {
     const adapter = this.app.vault.adapter;
     const snapshot: Record<string, SubjectData> = {};

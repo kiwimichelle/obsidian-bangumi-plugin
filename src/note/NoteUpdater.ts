@@ -78,31 +78,39 @@ export class NoteUpdater {
    * 若文件不存在或读取失败，返回空集合（不抛错，让覆盖更新仍能继续）
    */
   async extract(file: TFile, typeKey: SubjectTypeKey): Promise<PreservedContent> {
-    const result: PreservedContent = {
-      headerLines:      new Map(),
-      preserveSections: new Map(),
-      appendSections:   new Map(),
-    };
-    const policy = POLICIES[typeKey];
+  const result: PreservedContent = {
+    headerLines:      new Map(),
+    preserveSections: new Map(),
+    appendSections:   new Map(),
+  };
+  const policy = POLICIES[typeKey];
 
-    const raw = await this.app.vault.read(file);
-    const body = stripFrontmatter(raw);
-
-    for (const prefix of policy.headerPrefixes) {
-      const value = findHeaderValue(body, prefix);
-      if (value !== null) result.headerLines.set(prefix, value);
-    }
-    for (const heading of policy.preserveSections) {
-      const content = extractSection(body, heading);
-      if (content) result.preserveSections.set(heading, content);
-    }
-    for (const heading of policy.appendSections) {
-      const content = extractSection(body, heading);
-      if (content) result.appendSections.set(heading, content);
-    }
-
+  // ✅ 修复：捕获文件读取异常，安全退化为空集合
+  let raw: string;
+  try {
+    raw = await this.app.vault.read(file);
+  } catch (err) {
+    console.warn(`[bangumi] NoteUpdater.extract 读取文件失败，将跳过内容保留`, err);
     return result;
   }
+
+  const body = stripFrontmatter(raw);
+
+  for (const prefix of policy.headerPrefixes) {
+    const value = findHeaderValue(body, prefix);
+    if (value !== null) result.headerLines.set(prefix, value);
+  }
+  for (const heading of policy.preserveSections) {
+    const content = extractSection(body, heading);
+    if (content) result.preserveSections.set(heading, content);
+  }
+  for (const heading of policy.appendSections) {
+    const content = extractSection(body, heading);
+    if (content) result.appendSections.set(heading, content);
+  }
+
+  return result;
+}
 
   /**
    * 把保留内容注入到 NoteBuilder 渲染出的新正文

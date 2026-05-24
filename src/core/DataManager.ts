@@ -17,12 +17,11 @@ import type { SearchIndexBuilder }    from './SearchIndexBuilder';
 import type { OnlineFetcher }         from './OnlineFetcher';
 import type { BgmScraper }            from './BgmScraper';
 import type { RelationFetcher }       from './RelationFetcher';
-import * as path from 'path'; // 👉 确保引入了 path 模块
 import type { RelationIndexBuilder }  from './RelationIndexBuilder';
 import type { EpisodeIndexBuilder }   from './EpisodeindexBuilder';
 import type { PersonIndexBuilder }    from './PersonindexBuilder';
 import { DataAdapter }                from './DataAdapter';
-import type { ArchiveLocator }        from '../vault/ArchiveLocator'; // 用于解析绝对路径
+import type { ArchiveLocator }        from '../vault/ArchiveLocator'; // 用于解析绝对路径s
 
 // ─────────────────────────────────────────────
 // 公共错误类型
@@ -123,9 +122,6 @@ export class DataManager {
     this.personIndex   = deps.personIndex;
     this.getJsonlPath  = deps.getJsonlPath;
     this.getSettings   = deps.getSettings;
-    this.episodeIndex = deps.episodeIndex;
-    this.personIndex = deps.personIndex;
-    this.relationIndex = deps.relationIndex;
     this.archiveLocator = deps.archiveLocator;
   }
 
@@ -185,44 +181,75 @@ export class DataManager {
   }
 
 /**
-   * 方案 A 核心：根据已有的 offlineDbPath 自动推导出同目录下其他数据包的路径，并执行构建
-   */
-  async buildAllOfflineIndices(onProgress?: (stage: string, lines: number) => void): Promise<void> {
-    // 💡 修复：1. 加上 await； 2. 去掉小括号里的传参
-    const absoluteDbPath = await this.archiveLocator.resolve();
-    
-    // 💡 修复：防空守卫（因为可能返回 string | null）
-    if (!absoluteDbPath) {
-      console.warn('[bangumi] 离线数据库路径未解析成功，放弃构建索引');
-      return;
-    }
-    
-    // 此时 absoluteDbPath 已被安全收窄为绝对路径 string 类型
-    const dbDir = path.dirname(absoluteDbPath);
+ * 全量构建所有离线索引。
+ * 路径约定：旁路文件（episodes / persons 等）与主数据包同目录。
+ * 任一旁路文件不存在时，对应索引跳过构建（不抛错）。
+ *
+ * @param onProgress - (stage, linesScanned) 阶段进度回调
+ */
+async buildAllOfflineIndices(
+  onProgress?: (stage: string, lines: number) => void,
+): Promise<void> {
+  const settings = this.getSettings();
+  const paths    = settings.offlineDbPaths;
 
-    const episodesPath       = path.join(dbDir, 'episodes.jsonlines');
-    const personsPath        = path.join(dbDir, 'persons.jsonlines');
-    const subjectPersonsPath = path.join(dbDir, 'subject-persons.jsonlines');
-    const relationsPath      = path.join(dbDir, 'subject-relations.jsonlines');
-
-    // 构建主条目
-    await this.index.build(absoluteDbPath, (lines) => onProgress?.('主条目索引', lines));
-    
-    if (this.episodeIndex) {
-      await this.episodeIndex.build(episodesPath, (lines) => onProgress?.('分集信息', lines));
-    }
-    
-    if (this.personIndex) {
-      await this.personIndex.build(personsPath, subjectPersonsPath, (lines) => onProgress?.('制作人员', lines));
-    }
-    
-    if (this.relationIndex) {
-      await this.relationIndex.build(relationsPath, (lines) => onProgress?.('关联条目', lines));
-    }
-
-    // 构建主搜索
-    await this.searchIndex.build(absoluteDbPath, (lines) => onProgress?.('搜索索引', lines));
+  // ── 阶段 1 & 2：主条目（必须）──────────────────────────────
+  const subjectPath = await this.archiveLocator.resolveCustom(paths.subject);
+  if (!subjectPath) {
+    console.warn('[bangumi] 主条目路径未配置或无效，放弃构建');
+    return;
   }
+
+  onProgress?.('主条目行号索引', 0);
+  await this.index.build(subjectPath, (lines) =>
+    onProgress?.('主条目行号索引', lines),
+  );
+
+  onProgress?.('关键词搜索索引', 0);
+  await this.searchIndex.build(subjectPath, (lines) =>
+    onProgress?.('关键词搜索索引', lines),
+  );
+
+  // ── 阶段 3：分集（可选）────────────────────────────────────
+  if (this.episodeIndex && paths.episodes) {
+    const p = await this.archiveLocator.resolveCustom(paths.episodes);
+    if (p) {
+      onProgress?.('分集信息索引', 0);
+      await this.episodeIndex.build(p, (lines) =>
+        onProgress?.('分集信息索引', lines),
+      );
+    } else {
+      console.warn('[bangumi] episodes 路径无效，跳过分集索引');
+    }
+  }
+
+  // ── 阶段 4：制作人员（两个文件配套，缺一不构建）───────────
+  if (this.personIndex && paths.persons && paths.subjectPersons) {
+    const p1 = await this.archiveLocator.resolveCustom(paths.persons);
+    const p2 = await this.archiveLocator.resolveCustom(paths.subjectPersons);
+    if (p1 && p2) {
+      onProgress?.('制作人员索引', 0);
+      await this.personIndex.build(p1, p2, (lines) =>
+        onProgress?.('制作人员索引', lines),
+      );
+    } else {
+      console.warn('[bangumi] persons 路径无效，跳过制作人员索引');
+    }
+  }
+
+  // ── 阶段 5：关联（可选）────────────────────────────────────
+  if (this.relationIndex && paths.relations) {
+    const p = await this.archiveLocator.resolveCustom(paths.relations);
+    if (p) {
+      onProgress?.('关联条目索引', 0);
+      await this.relationIndex.build(p, (lines) =>
+        onProgress?.('关联条目索引', lines),
+      );
+    } else {
+      console.warn('[bangumi] relations 路径无效，跳过关联索引');
+    }
+  }
+}
 
   // ─────────────────────────────────────────────
   // Priority 4: 分集数据访问
@@ -282,19 +309,27 @@ export class DataManager {
    * 返回的 `fromOffline` 字段供 UI 标记结果来源。
    */
   async search(query: SearchQuery): Promise<SearchResponse> {
-    const settings   = this.getSettings();
-    const limit      = query.limit > 0 ? query.limit : DEFAULT_PAGE_SIZE;
-    const useOffline = settings.offlineMode && this.searchIndex.isReady();
+  const settings = this.getSettings();
+  const limit    = query.limit > 0 ? query.limit : DEFAULT_PAGE_SIZE;
 
-    if (useOffline) {
-      const offline = await this.searchOffline(query, limit);
-      if (offline.list.length > 0) return this.applyNsfwFilter(offline, settings);
-      // 命中为 0 → 回退到在线（关键词可能不在离线包字典中）
-    }
+  // ✅ 修复：query.mode 明确指定时优先使用，否则回退到全局设置
+  const modeOverride = query.mode;
+  const wantOffline  = modeOverride === 'offline'
+    ? true
+    : modeOverride === 'online'
+    ? false
+    : settings.offlineMode;
 
-    const result = await this.fetcher.searchByKeyword(query);
-    return this.applyNsfwFilter(result, settings);
+  const useOffline = wantOffline && this.searchIndex.isReady();
+
+  if (useOffline) {
+    const offline = await this.searchOffline(query, limit);
+    if (offline.list.length > 0) return this.applyNsfwFilter(offline, settings);
   }
+
+  const result = await this.fetcher.searchByKeyword(query);
+  return this.applyNsfwFilter(result, settings);
+}
 
   // ─────────────────────────────────────────────
   // 内部：NSFW 过滤（Priority 2）

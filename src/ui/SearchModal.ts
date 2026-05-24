@@ -171,11 +171,12 @@ export class SearchModal extends Modal {
     this.statusEl.setText('🔍 搜索中...');
 
     const query: SearchQuery = {
-      keyword:    kw,
-      typeFilter: this.currentType,
-      page:       this.currentPage,
-      limit:      DEFAULT_PAGE_SIZE,
-    };
+    keyword:    kw,
+    typeFilter: this.currentType,
+    page:       this.currentPage,
+    limit:      DEFAULT_PAGE_SIZE,
+    mode:       this.currentMode,  // ✅ 修复：传入当前模式
+  };
 
     let resp: SearchResponse;
     try {
