@@ -47,22 +47,18 @@ export class ArchiveLocator {
    * 优先读取新版 offlineDbPaths.subject，兜底读旧版 offlineDbPath。
    */
   async resolve(): Promise<string | null> {
-    const settings = this.getSettings();
-    const raw = (
-      settings.offlineDbPaths?.subject ||
-      settings.offlineDbPath ||
-      ''
-    ).trim();
+  const settings = this.getSettings();
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  const raw = (settings.offlineDbPaths?.subject || settings.offlineDbPath || '').trim();
 
-    if (!raw) {
-      this.cachedPath = null;
-      return null;
-    }
-
-    const absPath    = this.toAbsolute(raw);
-    this.cachedPath  = (await this.isValid(absPath)) ? absPath : null;
-    return this.cachedPath;
+  if (!raw) {
+    this.cachedPath = null;
+    return null;
   }
+  const absPath   = this.toAbsolute(raw);
+  this.cachedPath = (await this.isValid(absPath)) ? absPath : null;
+  return this.cachedPath;
+}
 
   /**
    * 解析并验证任意路径（供多路径配置使用）。

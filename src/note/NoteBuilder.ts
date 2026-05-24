@@ -9,7 +9,8 @@ import {
 import { BGM_WEB_BASE, DEFAULT_TEMPLATES } from '../constants';
 import {
   buildCreditsFrontmatter,
-  buildCreditsTableRows,
+  buildCreditsMain,        // ✅ 新增
+  buildCreditsCast,        // ✅ 新增
   buildEpsCheckboxes,
   buildInfoboxFrontmatter,
   buildInfoboxTableRows,
@@ -81,66 +82,62 @@ export class NoteBuilder {
     return DEFAULT_TEMPLATES[typeKey];
   }
 
-  private buildVars(
-    data:           SubjectData,
-    subjective:     Subjective,
-    coverLocalPath: string,
-    year:           string,
-    season:         string,
-  ): Record<string, string> {
-    // Priority 4: 获取分集数据（若离线索引就绪）
-    const episodes = this.dataManager?.getMainEpisodes(data.id) ?? [];
+  // 在 buildVars 方法的复杂槽位部分替换如下
+private buildVars(
+  data:           SubjectData,
+  subjective:     Subjective,
+  coverLocalPath: string,
+  year:           string,
+  season:         string,
+): Record<string, string> {
+  const episodes = this.dataManager?.getMainEpisodes(data.id) ?? [];
+  const credits  = this.dataManager?.getCredits(data.id) ?? [];
 
-    // Priority 5: 获取制作人员数据（若离线索引就绪）
-    const credits  = this.dataManager?.getCredits(data.id) ?? [];
+  return {
+    // ── 基础 ───────────────────────────────────────────────────
+    title:               data.name,
+    original_title:      data.nameOriginal,
+    cover_local:         coverLocalPath || data.coverUrl,
+    bangumi_id:          String(data.id),
+    bangumi_url:         `${BGM_WEB_BASE}/subject/${data.id}`,
+    score:               data.score > 0 ? String(data.score) : '',
+    rank:                data.rank  > 0 ? String(data.rank)  : '',
+    summary:             data.summary,
+    today:               getToday(),
+    year,
+    season,
+    eps_count:           data.eps > 0 ? String(data.eps) : '',
+    tags_yaml:           buildTagsYaml(data.tags),
 
-    return {
-      // ── 基础 ───────────────────────────────────────────────────
-      title:               data.name,
-      original_title:      data.nameOriginal,
-      cover_local:         coverLocalPath || data.coverUrl,
-      bangumi_id:          String(data.id),
-      bangumi_url:         `${BGM_WEB_BASE}/subject/${data.id}`,
-      score:               data.score > 0 ? String(data.score) : '',
-      rank:                data.rank  > 0 ? String(data.rank)  : '',
-      summary:             data.summary,
-      summary_raw:         '',
-      today:               getToday(),
-      year,
-      season,
-      eps_count:           data.eps > 0 ? String(data.eps) : '',
-      tags_yaml:           buildTagsYaml(data.tags),
+    // ── infobox（已过滤人员类字段）──────────────────────────────
+    infobox_table_rows:  buildInfoboxTableRows(data.infobox),
+    infobox_frontmatter: buildInfoboxFrontmatter(data.infobox),
 
-      // ── infobox ────────────────────────────────────────────────
-      infobox_table_rows:  buildInfoboxTableRows(data.infobox),
-      infobox_frontmatter: buildInfoboxFrontmatter(data.infobox),
+    // ── 分集 ───────────────────────────────────────────────────
+    eps_checkboxes:      buildEpsCheckboxes(data.eps, episodes.length > 0 ? episodes : undefined),
+    netaba_iframe:       buildNetabaIframe(data.id),
 
-      // ── 复杂槽位 ───────────────────────────────────────────────
-      // Priority 4: 优先使用离线分集数据，无则退化为纯序号
-      eps_checkboxes:      buildEpsCheckboxes(data.eps, episodes.length > 0 ? episodes : undefined),
-      netaba_iframe:       buildNetabaIframe(data.id),
+    // ── 关联 ───────────────────────────────────────────────────
+    related_series:      buildRelationNames(data.relations, '系列'),
+    related_series_link: buildRelationLinks(data.relations, '系列'),
+    sequel_link:         buildRelationLinks(data.relations, '续集'),
+    prequel_link:        buildRelationLinks(data.relations, '前传'),
 
-      // ── 关联 ───────────────────────────────────────────────────
-      related_series:      buildRelationNames(data.relations, '系列'),
-      related_series_link: buildRelationLinks(data.relations, '系列'),
-      sequel_link:         buildRelationLinks(data.relations, '续集'),
-      prequel_link:        buildRelationLinks(data.relations, '前传'),
+    // ── 分类特有 ───────────────────────────────────────────────
+    adaptation:          data.typeKey === 'anime' ? detectAdaptation(data.infobox) : '',
+    artist:              getInfoboxValue(data.infobox, ['艺术家', '作曲', '演唱']),
+    track_count:         getInfoboxValue(data.infobox, ['曲目数', '曲目']),
 
-      // ── 分类特有字段 ───────────────────────────────────────────
-      adaptation:          data.typeKey === 'anime' ? detectAdaptation(data.infobox) : '',
-      artist:              getInfoboxValue(data.infobox, ['艺术家', '作曲', '演唱']),
-      track_count:         getInfoboxValue(data.infobox, ['曲目数', '曲目']),
+    // ── 制作人员（拆分为主创和声优）────────────────────────────
+    credits_main:        buildCreditsMain(credits),
+    credits_cast:        buildCreditsCast(credits),
+    credits_frontmatter: buildCreditsFrontmatter(credits),
 
-      // ── Priority 5: 制作人员 ────────────────────────────────────
-      credits_table_rows:  buildCreditsTableRows(credits),
-      credits_frontmatter: buildCreditsFrontmatter(credits),
-
-      // ── 主观输入 ───────────────────────────────────────────────
-      ...buildSubjectiveVars(data.typeKey, subjective),
-    };
-  }
+    // ── 主观输入 ───────────────────────────────────────────────
+    ...buildSubjectiveVars(data.typeKey, subjective),
+  };
 }
-
+}
 // ─────────────────────────────────────────────
 // 纯函数工具（部分导出供 vault 层使用）
 // ─────────────────────────────────────────────

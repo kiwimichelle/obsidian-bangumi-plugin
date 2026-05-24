@@ -117,6 +117,7 @@ export default class BangumiPlugin extends Plugin {
 
     // 4. 首次启动引导 (如果既没配置路径，也没跳过构建)
     this.app.workspace.onLayoutReady(() => {
+       // eslint-disable-next-line @typescript-eslint/no-deprecated
       if (!this.settings.offlineDbPath && this.settings.indexBuiltAt === 0) {
         void OnboardingModal.prompt(
   this.app,
@@ -129,9 +130,9 @@ export default class BangumiPlugin extends Plugin {
   }
 
   /** 旧版单路径 → 新版多路径结构迁移 */
+/* eslint-disable @typescript-eslint/no-deprecated */
 private async migrateSettings(): Promise<void> {
   const s = this.settings;
-  // 旧字段有值，新字段 subject 为空 → 自动迁移
   if (s.offlineDbPath && !s.offlineDbPaths?.subject) {
     s.offlineDbPaths = {
       subject:        s.offlineDbPath,
@@ -143,12 +144,12 @@ private async migrateSettings(): Promise<void> {
     await this.saveSettings();
     console.log('[bangumi] 已自动迁移旧版路径配置');
   }
-  // 确保结构完整（Object.assign 只补顶层字段，嵌套对象需单独处理）
   if (!s.offlineDbPaths) {
     s.offlineDbPaths = { ...DEFAULT_OFFLINE_DB_PATHS };
     await this.saveSettings();
   }
 }
+/* eslint-enable @typescript-eslint/no-deprecated */
 
   async onunload() {
     // 确保任何在内存中的用户修改安全落盘

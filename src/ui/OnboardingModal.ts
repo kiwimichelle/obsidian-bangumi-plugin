@@ -117,15 +117,15 @@ export class OnboardingModal extends Modal {
     this.contentEl.empty();
   }
 
-  private async applyOfflineMode(rawPath: string): Promise<void> {
+ private async applyOfflineMode(rawPath: string): Promise<void> {
   const settings = this.getSettings();
 
-  // 确保结构存在
   if (!settings.offlineDbPaths) {
     settings.offlineDbPaths = { ...DEFAULT_OFFLINE_DB_PATHS };
   }
 
   settings.offlineDbPaths.subject = rawPath;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
   settings.offlineDbPath          = rawPath;  // 保留旧字段兼容
 
   const locator  = new ArchiveLocator(this.app, this.getSettings);
@@ -135,9 +135,10 @@ export class OnboardingModal extends Modal {
     return;
   }
 
-  settings.offlineMode                    = true;
-  settings.offlineDbPaths.subject         = resolved;
-  settings.offlineDbPath                  = resolved;
+  settings.offlineMode            = true;
+  settings.offlineDbPaths.subject = resolved;
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  settings.offlineDbPath          = resolved;
   await this.saveSettings();
 
   this.settled = true;
@@ -145,5 +146,14 @@ export class OnboardingModal extends Modal {
   this.close();
 
   IndexProgressModal.buildAll(this.app, resolved, this.dataManager);
+}
+private async applyOnlineMode(): Promise<void> {
+  const settings       = this.getSettings();
+  settings.offlineMode = false;
+  await this.saveSettings();
+  new Notice('🌐 已切换为纯在线模式');
+  this.settled = true;
+  this.resolve({ mode: 'online' });
+  this.close();
 }
 }
