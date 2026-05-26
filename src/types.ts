@@ -35,7 +35,6 @@ export interface RawArchiveSubject {
   rank?:     number;
   meta_tags?: string[];
   nsfw?:     boolean;
-  /** 封面图片路径（相对或绝对 URL） */
   image?:    string;
 }
 
@@ -82,6 +81,17 @@ export interface ApiRelation {
   images?:   ApiSubject['images'];
 }
 
+/** /v0/subjects/:id/characters 单条响应 */
+export interface ApiCharacter {
+  id:      number;
+  name:    string;
+  actors?: Array<{
+    id:       number;
+    name:     string;
+    name_cn?: string;
+  }>;
+}
+
 // ─────────────────────────────────────────────
 // 三、归一化统一结构
 // ─────────────────────────────────────────────
@@ -97,6 +107,18 @@ export interface SubjectRelation {
   nameOriginal: string;
   relation:     string;
   typeKey:      SubjectTypeKey | null;
+}
+
+/**
+ * 声优条目（来自 /v0/subjects/:id/characters）
+ * 含角色名和 CV 名，在线模式专用
+ */
+export interface CastCredit {
+  characterId:   number;
+  characterName: string;
+  actorId:       number;
+  actorName:     string;     // 中文名优先
+  actorOriginal: string;     // 日文名
 }
 
 export interface SubjectData {
@@ -117,6 +139,8 @@ export interface SubjectData {
   tags:            string[];
   relations:       SubjectRelation[];
   relationsLoaded: boolean;
+  /** 在线模式拉取的声优数据；离线模式为空数组 */
+  castCredits:     CastCredit[];
   source:          'cache' | 'archive' | 'api';
 }
 
@@ -187,25 +211,18 @@ export interface SubjectTypeConfig {
   overwriteMode:  OverwriteMode;
 }
 
-/** 各离线数据包的独立路径配置 */
 export interface OfflineDbPaths {
-  /** subject.jsonlines — 主条目（必须） */
   subject:        string;
-  /** episodes.jsonlines — 分集信息（可选） */
   episodes:       string;
-  /** persons.jsonlines — 人物信息（可选，与 subjectPersons 配套） */
   persons:        string;
-  /** subject-persons.jsonlines — 条目↔人员关联（可选，与 persons 配套） */
   subjectPersons: string;
-  /** subject-relations.jsonlines — 条目间关联（可选） */
   relations:      string;
 }
 
 export interface BangumiSettings {
   token:              string;
-  /** @deprecated 已迁移至 offlineDbPaths.subject，仅保留用于升级兼容 */
+  /** @deprecated 已迁移至 offlineDbPaths.subject */
   offlineDbPath:      string;
-  /** 各数据包独立路径配置 */
   offlineDbPaths:     OfflineDbPaths;
   offlineMode:        boolean;
   indexBuiltAt:       number;
@@ -265,12 +282,15 @@ export interface SearchResponse {
 }
 
 // ─────────────────────────────────────────────
-// 八、防撞命名结果
+// 八、命名冲突解决结果
 // ─────────────────────────────────────────────
 
 export interface NamingResult {
+  /** 最终确定的文件名（不含 .md 后缀） */
   filename:     string;
+  /** 已存在文件的路径，空字符串表示无冲突 */
   existingPath: string;
+  /** none=无冲突或同ID更新，same=同目录同名异ID，other=跨媒介同名 */
   conflict:     'none' | 'same' | 'other';
 }
 
@@ -296,4 +316,24 @@ export interface PersonCredit {
   nameOriginal:  string;
   positionId:    number;
   positionLabel: string;
+}
+
+// ─────────────────────────────────────────────
+// 十、搜索轻量数据缓存（方案A：搜索专用）
+// ─────────────────────────────────────────────
+
+/**
+ * 构建阶段从 jsonl 提取的轻量条目，仅含搜索展示所需字段。
+ * 存储在 bangumi-search-data.json，全量加载进内存，
+ * 避免搜索结果物化时回读 jsonl 大文件。
+ */
+export interface SearchDataEntry {
+  id:       number;
+  type:     number;
+  name:     string;
+  name_cn:  string;
+  date:     string;
+  score:    number;
+  image:    string;
+  nsfw:     boolean;
 }

@@ -8,49 +8,31 @@ import type {
   Subjective,
 } from '../types';
 import { TYPE_FILTERS, SUBJECT_TYPE_LABEL, DEFAULT_PAGE_SIZE } from '../constants';
-import type { DataManager }    from '../core/DataManager';
-import { ProgressNotice }      from './ProgressNotice';
-import { SubjectiveModal }     from './SubjectiveModal';
+import type { DataManager }   from '../core/DataManager';
+import { ProgressNotice }     from './ProgressNotice';
+import { SubjectiveModal }    from './SubjectiveModal';
 
-// ─────────────────────────────────────────────
-// SearchModal
-// ─────────────────────────────────────────────
+/** SearchModal.prompt 的返回值 */
+export interface SearchResult {
+  data:       SubjectData;
+  subjective: Subjective;
+}
 
-/**
- * Bangumi 搜索弹窗
- *
- * 功能：
- * - 关键词搜索（离线索引优先，回退在线 API）
- * - 类型筛选栏
- * - 分页（上 / 下页按钮）
- * - 选中条目后弹出 SubjectiveModal 收集用户主观输入
- *
- * Priority 2 新增：
- * - NSFW 条目在结果列表中显示「🔞」徽章
- * - 若 settings.hideNsfw=true，DataManager.search 已过滤，UI 侧不再重复过滤；
- *   但若 hideNsfw=false，仍显示 NSFW 徽章让用户自行判断
- *
- * 使用方式：
- * ```ts
- * const result = await SearchModal.prompt(app, dataManager, getSettings);
- * if (!result) return; // 用户取消
- * const { data, subjective } = result;
- * ```
- */
 export class SearchModal extends Modal {
   private readonly dataManager: DataManager;
   private readonly getSettings: () => BangumiSettings;
-  private readonly resolve: (val: SearchResult | null) => void;
-  private currentMode: 'offline' | 'online' = 'online'; // 👈 补回这行状态变量
+  private readonly resolve:     (val: SearchResult | null) => void;
 
-  // ── 状态 ──
+  // 修复：用 settled 标记 resolve 是否已被调用，防止多次触发
+  private settled = false;
+
+  private currentMode: 'offline' | 'online' = 'online';
   private currentType = 0;
   private currentPage = 1;
   private totalItems  = 0;
   private isLoading   = false;
   private lastKeyword = '';
 
-  // ── DOM refs ──
   private inputEl!:      HTMLInputElement;
   private statusEl!:     HTMLElement;
   private resultsEl!:    HTMLElement;
@@ -58,10 +40,10 @@ export class SearchModal extends Modal {
   private filterBtns:    HTMLButtonElement[] = [];
 
   private constructor(
-    app: App,
-    dataManager: DataManager,
-    getSettings: () => BangumiSettings,
-    resolve: (val: SearchResult | null) => void,
+    app:          App,
+    dataManager:  DataManager,
+    getSettings:  () => BangumiSettings,
+    resolve:      (val: SearchResult | null) => void,
   ) {
     super(app);
     this.dataManager = dataManager;
@@ -69,12 +51,8 @@ export class SearchModal extends Modal {
     this.resolve     = resolve;
   }
 
-  /**
-   * 打开搜索弹窗并等待结果。
-   * 用户取消或关闭时返回 null。
-   */
   static prompt(
-    app: App,
+    app:         App,
     dataManager: DataManager,
     getSettings: () => BangumiSettings,
   ): Promise<SearchResult | null> {
@@ -87,15 +65,14 @@ export class SearchModal extends Modal {
     const { contentEl } = this;
     this.setTitle('Bangumi 搜索');
 
-    // 👇 从这里开始复制：把消失的模式切换器加回来
-    const modeBar = contentEl.createEl('div', { cls: 'bangumi-mode-switcher' });
+    // 模式切换器
+    const modeBar    = contentEl.createEl('div', { cls: 'bangumi-mode-switcher' });
     const offlineBtn = modeBar.createEl('button', { text: '📴 离线模式', cls: 'bangumi-mode-btn' });
-    const onlineBtn = modeBar.createEl('button', { text: '🌐 在线模式', cls: 'bangumi-mode-btn' });
+    const onlineBtn  = modeBar.createEl('button', { text: '🌐 在线模式', cls: 'bangumi-mode-btn' });
 
-    // 初始化时读取全局默认设置决定当前处于什么模式
     this.currentMode = this.getSettings().offlineMode ? 'offline' : 'online';
     if (this.currentMode === 'offline') offlineBtn.classList.add('active');
-    else onlineBtn.classList.add('active');
+    else                                onlineBtn.classList.add('active');
 
     offlineBtn.addEventListener('click', () => {
       this.currentMode = 'offline';
@@ -110,13 +87,11 @@ export class SearchModal extends Modal {
       offlineBtn.classList.remove('active');
       if (this.lastKeyword) void this.doSearch(true);
     });
-    // ── 类型筛选栏 ──
-    const filterBar = contentEl.createEl('div', { cls: 'bangumi-modal-filter-bar' });
-    this.filterBtns = TYPE_FILTERS.map(f => {
-      const btn = filterBar.createEl('button', {
-        text: f.label,
-        cls:  'bangumi-filter-btn',
-      });
+
+    // 类型筛选栏
+    const filterBar   = contentEl.createEl('div', { cls: 'bangumi-modal-filter-bar' });
+    this.filterBtns   = TYPE_FILTERS.map(f => {
+      const btn = filterBar.createEl('button', { text: f.label, cls: 'bangumi-filter-btn' });
       if (f.value === this.currentType) btn.classList.add('active');
       btn.addEventListener('click', () => {
         this.currentType = f.value;
@@ -128,7 +103,7 @@ export class SearchModal extends Modal {
       return btn;
     });
 
-    // ── 搜索输入框 ──
+    // 搜索输入框
     this.inputEl = contentEl.createEl('input', {
       type:        'text',
       placeholder: '输入名称后按 Enter 搜索...',
@@ -138,25 +113,24 @@ export class SearchModal extends Modal {
       if (e.key === 'Enter') void this.doSearch(true);
     });
 
-    // ── 状态行 ──
-    this.statusEl = contentEl.createEl('div', { cls: 'bangumi-status' });
-
-    // ── 结果列表 ──
-    this.resultsEl = contentEl.createEl('div', { cls: 'bangumi-results' });
-
-    // ── 分页 ──
+    this.statusEl     = contentEl.createEl('div', { cls: 'bangumi-status' });
+    this.resultsEl    = contentEl.createEl('div', { cls: 'bangumi-results' });
     this.paginationEl = contentEl.createEl('div', { cls: 'bangumi-pagination' });
 
     this.inputEl.focus();
   }
 
   onClose(): void {
-    this.resolve(null);
+    // 修复：只在 settled=false 时才 resolve(null)，防止选完条目后关弹窗再次触发
+    if (!this.settled) {
+      this.settled = true;
+      this.resolve(null);
+    }
     this.contentEl.empty();
   }
 
   // ─────────────────────────────────────────────
-  // 搜索调度
+  // 搜索
   // ─────────────────────────────────────────────
 
   private async doSearch(reset = false): Promise<void> {
@@ -171,12 +145,12 @@ export class SearchModal extends Modal {
     this.statusEl.setText('🔍 搜索中...');
 
     const query: SearchQuery = {
-    keyword:    kw,
-    typeFilter: this.currentType,
-    page:       this.currentPage,
-    limit:      DEFAULT_PAGE_SIZE,
-    mode:       this.currentMode,  // ✅ 修复：传入当前模式
-  };
+      keyword:    kw,
+      typeFilter: this.currentType,
+      page:       this.currentPage,
+      limit:      DEFAULT_PAGE_SIZE,
+      mode:       this.currentMode,
+    };
 
     let resp: SearchResponse;
     try {
@@ -196,14 +170,12 @@ export class SearchModal extends Modal {
       return;
     }
 
-    const sourceTag = resp.fromOffline ? '（离线）' : '（在线）';
-    const nsfwCount = resp.list.filter(i => i.nsfw).length;
-    let statusText = `找到 ${resp.total} 个结果 ${sourceTag}`;
-    if (nsfwCount > 0) {
-      const settings = this.getSettings();
-      if (!settings.hideNsfw) {
-        statusText += `，其中 ${nsfwCount} 个含 NSFW 内容`;
-      }
+    const sourceTag  = resp.fromOffline ? '（离线）' : '（在线）';
+    const settings   = this.getSettings();
+    const nsfwCount  = resp.list.filter(i => i.nsfw).length;
+    let statusText   = `找到 ${resp.total} 个结果 ${sourceTag}`;
+    if (nsfwCount > 0 && !settings.hideNsfw) {
+      statusText += `，其中 ${nsfwCount} 个含 NSFW 内容`;
     }
     this.statusEl.setText(statusText);
 
@@ -212,7 +184,7 @@ export class SearchModal extends Modal {
   }
 
   // ─────────────────────────────────────────────
-  // 渲染结果列表
+  // 渲染结果
   // ─────────────────────────────────────────────
 
   private renderResults(list: SearchResultItem[]): void {
@@ -224,7 +196,6 @@ export class SearchModal extends Modal {
           : 'bangumi-result-row',
       });
 
-      // 封面缩略图
       if (item.coverUrl) {
         const img = row.createEl('img', { cls: 'bangumi-result-cover' });
         img.src = item.coverUrl;
@@ -233,13 +204,10 @@ export class SearchModal extends Modal {
         row.createEl('div', { cls: 'bangumi-result-cover bangumi-result-cover--empty' });
       }
 
-      // 文字信息
-      const info = row.createEl('div', { cls: 'bangumi-result-info' });
-
-      // 标题行：名称 + 可能的 NSFW 徽章
+      const info     = row.createEl('div', { cls: 'bangumi-result-info' });
       const titleRow = info.createEl('div', { cls: 'bangumi-result-title-row' });
       titleRow.createEl('span', { text: item.name, cls: 'bangumi-result-title' });
-      // Priority 2: NSFW 徽章
+
       if (item.nsfw) {
         titleRow.createEl('span', {
           text: '🔞',
@@ -251,23 +219,18 @@ export class SearchModal extends Modal {
       if (item.nameOriginal && item.nameOriginal !== item.name) {
         info.createEl('div', { text: item.nameOriginal, cls: 'bangumi-result-subtitle' });
       }
-      const metaParts: string[] = [SUBJECT_TYPE_LABEL[item.typeKey]];
-      if (item.year) metaParts.push(item.year);
-      if (item.score > 0) metaParts.push(`⭐ ${item.score}`);
-      info.createEl('div', {
-        text: metaParts.join(' · '),
-        cls:  'bangumi-result-meta',
-      });
 
-      // 点击选中
-      row.addEventListener('click', () => {
-        void this.handleSelect(item);
-      });
+      const metaParts: string[] = [SUBJECT_TYPE_LABEL[item.typeKey]];
+      if (item.year)    metaParts.push(item.year);
+      if (item.score > 0) metaParts.push(`⭐ ${item.score}`);
+      info.createEl('div', { text: metaParts.join(' · '), cls: 'bangumi-result-meta' });
+
+      row.addEventListener('click', () => void this.handleSelect(item));
     }
   }
 
   // ─────────────────────────────────────────────
-  // 渲染分页
+  // 分页
   // ─────────────────────────────────────────────
 
   private renderPagination(): void {
@@ -279,10 +242,7 @@ export class SearchModal extends Modal {
 
     if (this.currentPage > 1) {
       const prev = wrap.createEl('button', { text: '← 上一页', cls: 'bangumi-page-btn' });
-      prev.addEventListener('click', () => {
-        this.currentPage--;
-        void this.doSearch();
-      });
+      prev.addEventListener('click', () => { this.currentPage--; void this.doSearch(); });
     }
 
     wrap.createEl('span', {
@@ -292,19 +252,16 @@ export class SearchModal extends Modal {
 
     if (this.currentPage < totalPages) {
       const next = wrap.createEl('button', { text: '下一页 →', cls: 'bangumi-page-btn' });
-      next.addEventListener('click', () => {
-        this.currentPage++;
-        void this.doSearch();
-      });
+      next.addEventListener('click', () => { this.currentPage++; void this.doSearch(); });
     }
   }
 
   // ─────────────────────────────────────────────
-  // 选中条目：拉取详情 → SubjectiveModal
+  // 选中条目
   // ─────────────────────────────────────────────
 
   private async handleSelect(item: SearchResultItem): Promise<void> {
-    if (this.isLoading) return;
+    if (this.isLoading || this.settled) return;
     this.isLoading = true;
 
     const notice = new ProgressNotice(`⏳ 正在获取「${item.name}」详情...`);
@@ -321,33 +278,22 @@ export class SearchModal extends Modal {
 
     notice.update('⏳ 请填写主观信息...');
 
-    // 弹出主观输入弹窗（此时 SearchModal 保持打开状态）
     const subjective = await SubjectiveModal.prompt(this.app, data);
 
     this.isLoading = false;
 
     if (!subjective) {
-      // 用户在 SubjectiveModal 里取消，回到搜索结果
+      // 用户在 SubjectiveModal 取消，回到搜索结果
       notice.hide();
       return;
     }
 
     notice.done(`✅ 正在为「${data.name}」建档...`);
 
-    // 关闭 SearchModal，resolve 结果给调用方
+    // 修复：先标记 settled，再 resolve，再 close
+    // 防止 close 触发 onClose 时再次 resolve(null)
+    this.settled = true;
     this.resolve({ data, subjective });
     this.close();
   }
-}
-
-// ─────────────────────────────────────────────
-// 公共结果类型
-// ─────────────────────────────────────────────
-
-/** SearchModal.prompt 的返回值 */
-export interface SearchResult {
-  /** 完整的条目数据 */
-  data: SubjectData;
-  /** 用户填写的主观信息 */
-  subjective: Subjective;
 }

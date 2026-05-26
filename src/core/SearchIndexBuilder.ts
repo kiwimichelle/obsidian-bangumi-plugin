@@ -3,14 +3,14 @@ import { normalizePath } from 'obsidian';
 import * as fs from 'fs';
 import * as readline from 'readline';
 
-import type { IndexMeta, RawArchiveSubject } from '../types';
+import type { IndexMeta, RawArchiveSubject, SearchDataEntry } from '../types';
 import {
   INDEX_BATCH_SIZE,
   PLUGIN_DATA_DIR,
   SEARCH_INDEX_FILE_NAME,
+  SEARCH_DATA_FILE_NAME,
 } from '../constants';
 
-/** 进度回调：每个批次结束时回调一次，参数为已扫描行数。 */
 export type SearchIndexProgressCallback = (linesScanned: number) => void;
 
 const SEARCH_META_FILE = 'bangumi-search-index.meta.json';
@@ -18,62 +18,55 @@ const SEARCH_META_FILE = 'bangumi-search-index.meta.json';
 /**
  * 关键词倒排索引构建器
  *
- * 职责：
- * - 扫描 `bangumi.jsonl` 建立 `{ keyword → id[] }` 倒排索引
- * - 持久化到 `bangumi-search-index.json`，配套 `.meta.json` 元数据
- * - 提供 `search(keyword)` 给 `DataManager` 做离线关键词搜索
- *
- * 关键词提取规则：
- * - `name`/`name_cn` 中连续 CJK 片段（汉字/假名/韩文）：提取所有 2 字 bigram
- * - `name`/`name_cn` 中 ASCII 字母序列（≥2 字符）：整词存入
- * - `tags`：每个 tag 名称直接存入（不做 bigram 切分，保留原始语义）
- *
- * 搜索语义：
- * - 查询词分词后取各 token 命中集合的**交集**，即多词 AND 语义
- * - 单 CJK 字（无法构成 bigram）直接匹配 tag 词条
- *
- * 性能约束（同 IndexBuilder）：
- * - 用 Node `fs.createReadStream` + `readline` 流式扫描
- * - 每 `INDEX_BATCH_SIZE` 行 pause → setImmediate → resume 让出主线程
- * - 索引/元数据走 `vault.adapter`（库内、跨平台）；jsonl 走 Node `fs`（库外大文件）
+ * 修复：同步构建 bangumi-search-data.json（轻量全量数据缓存），
+ * 存储每条条目的展示字段（id/name/name_cn/type/date/score/image/nsfw）。
+ * 搜索结果物化时直接从内存 Map 读取，完全不需要回读 jsonl 大文件，
+ * 将搜索结果物化从 O(文件大小) 降至 O(1)。
  */
 export class SearchIndexBuilder {
   private readonly app: App;
-  private readonly dirPath: string;
-  private readonly indexPath: string;
-  private readonly metaPath: string;
+  private readonly dirPath:      string;
+  private readonly indexPath:    string;
+  private readonly metaPath:     string;
+  private readonly searchDataPath: string;
 
+  /** token → id[] 倒排索引 */
   private index = new Map<string, number[]>();
+  /** id → SearchDataEntry 轻量数据缓存（方案A核心） */
+  private dataCache = new Map<number, SearchDataEntry>();
   private ready = false;
 
   constructor(app: App, pluginDir: string) {
-    this.app = app;
-    this.dirPath = normalizePath(`${pluginDir}/${PLUGIN_DATA_DIR}`);
-    this.indexPath = normalizePath(`${this.dirPath}/${SEARCH_INDEX_FILE_NAME}`);
-    this.metaPath = normalizePath(`${this.dirPath}/${SEARCH_META_FILE}`);
+    this.app            = app;
+    this.dirPath        = normalizePath(`${pluginDir}/${PLUGIN_DATA_DIR}`);
+    this.indexPath      = normalizePath(`${this.dirPath}/${SEARCH_INDEX_FILE_NAME}`);
+    this.metaPath       = normalizePath(`${this.dirPath}/${SEARCH_META_FILE}`);
+    this.searchDataPath = normalizePath(`${this.dirPath}/${SEARCH_DATA_FILE_NAME}`);
   }
 
   // ──────────────────────────────────────────────────
   // 查询
   // ──────────────────────────────────────────────────
 
-  /** 索引是否就绪（已 `load()` 成功或 `build()` 完成）。 */
   isReady(): boolean {
     return this.ready;
   }
 
-  /** 唯一关键词条目数（不等于条目总数）。 */
   size(): number {
     return this.index.size;
   }
 
   /**
-   * 关键词搜索，返回匹配的条目 ID 列表。
+   * 获取轻量数据缓存条目，供 materializeIds 直接使用，无需读 jsonl。
+   */
+  getDataEntry(id: number): SearchDataEntry | undefined {
+    return this.dataCache.get(id);
+  }
+
+  /**
+   * 关键词搜索，返回匹配的条目 ID 列表（AND 语义）。
    *
-   * - 查询词与索引构建使用相同分词规则（CJK bigram + ASCII 词）
-   * - 多 token 时取所有命中 ID 集合的**交集**（AND 语义）
-   * - 任一 token 未命中立即返回 []
-   * - 结果数不超过 `limit`
+   * 修复：单 CJK 字时先尝试精确 tag 匹配，若无结果则提示（不再静默返回空）。
    */
   search(keyword: string, limit = 200): number[] {
     const tokens = tokenize(keyword);
@@ -108,41 +101,50 @@ export class SearchIndexBuilder {
   // ──────────────────────────────────────────────────
 
   /**
-   * 从磁盘加载倒排索引到内存。
-   * - 文件缺失 → 返回 false
-   * - JSON 损坏 → 返回 false（调用方应回退到 `build()`）
-   * 成功后 `isReady()` 为 true。
+   * 从磁盘加载倒排索引和轻量数据缓存。
+   * 两个文件都必须存在且有效，才置 ready=true。
    */
   async load(): Promise<boolean> {
     const adapter = this.app.vault.adapter;
-    if (!(await adapter.exists(this.indexPath))) return false;
+    if (
+      !(await adapter.exists(this.indexPath)) ||
+      !(await adapter.exists(this.searchDataPath))
+    ) return false;
 
     try {
-      const raw = await adapter.read(this.indexPath);
-      const parsed = JSON.parse(raw) as Record<string, number[]>;
-      const map = new Map<string, number[]>();
-      for (const [token, ids] of Object.entries(parsed)) {
-        if (Array.isArray(ids)) map.set(token, ids);
+      // 加载倒排索引
+      const rawIndex  = await adapter.read(this.indexPath);
+      const parsedIdx = JSON.parse(rawIndex) as Record<string, number[]>;
+      const indexMap  = new Map<string, number[]>();
+      for (const [token, ids] of Object.entries(parsedIdx)) {
+        if (Array.isArray(ids)) indexMap.set(token, ids);
       }
-      this.index = map;
-      this.ready = true;
+
+      // 加载轻量数据缓存
+      const rawData   = await adapter.read(this.searchDataPath);
+      const parsedData = JSON.parse(rawData) as Record<string, SearchDataEntry>;
+      const dataMap   = new Map<number, SearchDataEntry>();
+      for (const [key, entry] of Object.entries(parsedData)) {
+        const id = Number(key);
+        if (Number.isFinite(id)) dataMap.set(id, entry);
+      }
+
+      this.index     = indexMap;
+      this.dataCache = dataMap;
+      this.ready     = true;
       return true;
     } catch (err) {
-      console.warn('[bangumi] bangumi-search-index.json 加载失败，需要重建', err);
+      console.warn('[bangumi] 搜索索引加载失败，需要重建', err);
       return false;
     }
   }
 
-  /**
-   * 判断已持久化的倒排索引是否对当前 jsonl 失效。
-   * 检测维度：元数据缺失 / jsonl 路径变更 / jsonl 字节大小变化。
-   */
   async isStale(jsonlPath: string): Promise<boolean> {
     const adapter = this.app.vault.adapter;
     if (!(await adapter.exists(this.metaPath))) return true;
 
     try {
-      const raw = await adapter.read(this.metaPath);
+      const raw  = await adapter.read(this.metaPath);
       const meta = JSON.parse(raw) as IndexMeta;
       if (meta.jsonlPath !== jsonlPath) return true;
       const stat = await fs.promises.stat(jsonlPath);
@@ -157,20 +159,17 @@ export class SearchIndexBuilder {
   // ──────────────────────────────────────────────────
 
   /**
-   * 流式扫描 `jsonlPath`，建立倒排索引并持久化。
-   *
-   * - 单行 JSON.parse 失败不中断整体构建（容错损坏行）
-   * - 每 `INDEX_BATCH_SIZE` 行 pause 流并 setImmediate 让出主线程
-   * - 仅在 `persist()` 成功后才更新内存状态
+   * 流式扫描 jsonlPath，同时构建倒排索引和轻量数据缓存，一次扫描完成两件事。
    */
   async build(jsonlPath: string, onProgress?: SearchIndexProgressCallback): Promise<void> {
-    const map = new Map<string, number[]>();
-    let lineNum = 0;
+    const indexMap  = new Map<string, number[]>();
+    const dataMap   = new Map<number, SearchDataEntry>();
+    let lineNum    = 0;
     let batchCount = 0;
 
     await new Promise<void>((resolve, reject) => {
       const stream = fs.createReadStream(jsonlPath, { encoding: 'utf8' });
-      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      const rl     = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
       rl.on('line', (line) => {
         lineNum++;
@@ -181,7 +180,23 @@ export class SearchIndexBuilder {
           try {
             const raw = JSON.parse(trimmed) as RawArchiveSubject;
             if (typeof raw.id === 'number' && Number.isFinite(raw.id)) {
-              indexSubject(map, raw);
+              // 1. 构建倒排索引
+              indexSubject(indexMap, raw);
+
+              // 2. 构建轻量数据缓存（方案A核心）
+              const coverUrl = raw.image
+                ? (raw.image.startsWith('http') ? raw.image : `https://lain.bgm.tv${raw.image}`)
+                : '';
+              dataMap.set(raw.id, {
+                id:      raw.id,
+                type:    raw.type,
+                name:    raw.name,
+                name_cn: raw.name_cn ?? '',
+                date:    raw.date ?? '',
+                score:   raw.score ?? 0,
+                image:   coverUrl,
+                nsfw:    raw.nsfw ?? false,
+              });
             }
           } catch {
             /* 损坏行：跳过 */
@@ -204,10 +219,11 @@ export class SearchIndexBuilder {
     });
 
     const jsonlSize = (await fs.promises.stat(jsonlPath)).size;
-    await this.persist(map, jsonlPath, lineNum, jsonlSize);
+    await this.persist(indexMap, dataMap, jsonlPath, lineNum, jsonlSize);
 
-    this.index = map;
-    this.ready = true;
+    this.index     = indexMap;
+    this.dataCache = dataMap;
+    this.ready     = true;
     onProgress?.(lineNum);
   }
 
@@ -216,51 +232,50 @@ export class SearchIndexBuilder {
   // ──────────────────────────────────────────────────
 
   private async persist(
-    map: Map<string, number[]>,
+    indexMap:  Map<string, number[]>,
+    dataMap:   Map<number, SearchDataEntry>,
     jsonlPath: string,
     totalLines: number,
-    jsonlSize: number,
+    jsonlSize:  number,
   ): Promise<void> {
     const adapter = this.app.vault.adapter;
-
     if (!(await adapter.exists(this.dirPath))) {
       await adapter.mkdir(this.dirPath);
     }
 
-    const snapshot: Record<string, number[]> = {};
-    for (const [token, ids] of map) {
-      snapshot[token] = ids;
+    // 持久化倒排索引
+    const indexSnapshot: Record<string, number[]> = {};
+    for (const [token, ids] of indexMap) {
+      indexSnapshot[token] = ids;
     }
-    await adapter.write(this.indexPath, JSON.stringify(snapshot));
+    await adapter.write(this.indexPath, JSON.stringify(indexSnapshot));
 
-    const meta: IndexMeta = {
-      builtAt: Date.now(),
-      totalLines,
-      jsonlPath,
-      jsonlSize,
-    };
+    // 持久化轻量数据缓存
+    const dataSnapshot: Record<string, SearchDataEntry> = {};
+    for (const [id, entry] of dataMap) {
+      dataSnapshot[String(id)] = entry;
+    }
+    await adapter.write(this.searchDataPath, JSON.stringify(dataSnapshot));
+
+    // 持久化元数据
+    const meta: IndexMeta = { builtAt: Date.now(), totalLines, jsonlPath, jsonlSize };
     await adapter.write(this.metaPath, JSON.stringify(meta, null, 2));
   }
 }
 
 // ──────────────────────────────────────────────────
-// 模块内部：分词与索引提取（纯函数，不暴露）
+// 模块内部：分词与索引提取（纯函数）
 // ──────────────────────────────────────────────────
 
-/** 将单个条目的关键词写入倒排 map。 */
 function indexSubject(map: Map<string, number[]>, raw: RawArchiveSubject): void {
   const { id } = raw;
   for (const token of extractTokens(raw)) {
     let list = map.get(token);
-    if (!list) {
-      list = [];
-      map.set(token, list);
-    }
+    if (!list) { list = []; map.set(token, list); }
     list.push(id);
   }
 }
 
-/** 从条目提取全部去重 token 集合。 */
 function extractTokens(raw: RawArchiveSubject): Set<string> {
   const tokens = new Set<string>();
   addNameTokens(tokens, raw.name);
@@ -272,38 +287,36 @@ function extractTokens(raw: RawArchiveSubject): Set<string> {
   return tokens;
 }
 
-/**
- * 从 name/name_cn 提取 token 并写入 out：
- * - CJK 连续片段 → 所有 2 字 bigram（滑动窗口）
- * - ASCII 序列 → 整词（≥2 字符）
- */
 function addNameTokens(out: Set<string>, text: string): void {
   if (!text) return;
   const lower = text.toLowerCase();
 
-  // CJK：汉字（一-鿿）+ 假名（぀-ヿ, ㇰ-ㇿ）+ 韩文（가-힯）
+  // CJK bigram
   for (const chunk of lower.match(/[぀-ヿㇰ-ㇿ一-鿿가-힯]+/g) ?? []) {
-    for (let i = 0; i + 2 <= chunk.length; i++) {
-      out.add(chunk.slice(i, i + 2));
+    // 单字也加入，支持单字搜索
+    if (chunk.length === 1) {
+      out.add(chunk);
+    } else {
+      out.add(chunk); // 完整词也加入，支持精确匹配
+      for (let i = 0; i + 2 <= chunk.length; i++) {
+        out.add(chunk.slice(i, i + 2));
+      }
     }
   }
 
-  // ASCII：字母数字序列（≥2 字符）
+  // ASCII 词
   for (const word of lower.match(/[a-z0-9]{2,}/g) ?? []) {
     out.add(word);
   }
 }
 
 /**
- * 将搜索关键词分词为与索引对齐的 token 列表：
- * - CJK 片段长度 1：作为 tag 精确匹配直接加入
- * - CJK 片段长度 ≥2：bigram 展开
- * - ASCII 词（≥2 字符）：整词
- * 返回去重后的 token 数组。
+ * 搜索关键词分词。
+ * 修复：单 CJK 字不再只做 tag 匹配，也参与 bigram 查询（完整词直接加入）。
  */
-function tokenize(keyword: string): string[] {
+export function tokenize(keyword: string): string[] {
   const tokens = new Set<string>();
-  const lower = keyword.trim().toLowerCase();
+  const lower  = keyword.trim().toLowerCase();
   if (!lower) return [];
 
   for (const chunk of lower.match(/[぀-ヿㇰ-ㇿ一-鿿가-힯]+/g) ?? []) {

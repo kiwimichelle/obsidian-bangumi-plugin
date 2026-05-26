@@ -1,37 +1,35 @@
 /* ==========================================================================
    Bangumi Obsidian Plugin - 核心样式库
-   配合 SearchModal, SubjectiveModal 与 SettingTab 使用
    ========================================================================== */
 
 /* ──────────────────────────────────────────────────────────────────────────
-   1. 核心变量体系 (适配 Obsidian 主题)
+   1. 核心变量体系
    ────────────────────────────────────────────────────────────────────────── */
 .theme-light, .theme-dark {
-  --bgm-accent: var(--interactive-accent);
-  --bgm-accent-hover: var(--interactive-accent-hover);
-  --bgm-border: var(--background-modifier-border);
-  --bgm-bg-primary: var(--background-primary);
-  --bgm-bg-secondary: var(--background-secondary);
-  --bgm-bg-hover: var(--background-modifier-hover);
-  --bgm-bg-form: var(--background-modifier-form-field);
-  --bgm-text-normal: var(--text-normal);
-  --bgm-text-muted: var(--text-muted);
+  --bgm-accent:         var(--interactive-accent);
+  --bgm-accent-hover:   var(--interactive-accent-hover);
+  --bgm-border:         var(--background-modifier-border);
+  --bgm-bg-primary:     var(--background-primary);
+  --bgm-bg-secondary:   var(--background-secondary);
+  --bgm-bg-hover:       var(--background-modifier-hover);
+  --bgm-bg-form:        var(--background-modifier-form-field);
+  --bgm-text-normal:    var(--text-normal);
+  --bgm-text-muted:     var(--text-muted);
   --bgm-text-on-accent: var(--text-on-accent);
-  --bgm-radius: 8px;
-  --bgm-radius-sm: 4px;
-  --bgm-radius-lg: 12px;
-  --bgm-spacing-xs: 4px;
-  --bgm-spacing-sm: 8px;
-  --bgm-spacing-md: 16px;
-  --bgm-spacing-lg: 24px;
-  --bgm-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --bgm-radius:         8px;
+  --bgm-radius-sm:      4px;
+  --bgm-radius-lg:      12px;
+  --bgm-spacing-xs:     4px;
+  --bgm-spacing-sm:     8px;
+  --bgm-spacing-md:     16px;
+  --bgm-spacing-lg:     24px;
+  --bgm-shadow:         0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   2. SearchModal 搜索弹窗视图
+   2. SearchModal
    ────────────────────────────────────────────────────────────────────────── */
 
-/* 顶部模式切换 (离线/在线) 与 类型筛选器组合栏 */
 .bangumi-modal-header {
   display: flex;
   flex-direction: column;
@@ -39,7 +37,6 @@
   margin-bottom: var(--bgm-spacing-md);
 }
 
-/* 模式切换器 */
 .bangumi-mode-switcher {
   display: flex;
   justify-content: center;
@@ -68,7 +65,6 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-/* 类别筛选栏 */
 .bangumi-modal-filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -101,7 +97,6 @@
   font-weight: 600;
 }
 
-/* 搜索输入框 */
 .bangumi-search-input {
   width: 100%;
   padding: 10px 16px;
@@ -118,7 +113,6 @@
   outline: none;
 }
 
-/* 状态提示信息 */
 .bangumi-status {
   text-align: center;
   font-size: 0.9em;
@@ -128,7 +122,6 @@
   font-style: italic;
 }
 
-/* 搜索结果列表容器 */
 .bangumi-results {
   max-height: 50vh;
   overflow-y: auto;
@@ -138,7 +131,6 @@
   margin-bottom: var(--bgm-spacing-md);
 }
 
-/* 单个搜索结果行 */
 .bangumi-result-row {
   display: flex;
   align-items: center;
@@ -149,19 +141,12 @@
   gap: var(--bgm-spacing-md);
 }
 
-.bangumi-result-row:last-child {
-  border-bottom: none;
-}
+.bangumi-result-row:last-child { border-bottom: none; }
 
-.bangumi-result-row:hover {
-  background-color: var(--bgm-bg-hover);
-}
+.bangumi-result-row:hover { background-color: var(--bgm-bg-hover); }
 
-.bangumi-result-row--nsfw {
-  border-left: 4px solid #e53e3e;
-}
+.bangumi-result-row--nsfw { border-left: 4px solid #e53e3e; }
 
-/* 封面图 */
 .bangumi-result-cover {
   width: 48px;
   height: 68px;
@@ -179,10 +164,9 @@
   border: 1px dashed var(--bgm-border);
 }
 
-/* 文字信息区 */
 .bangumi-result-info {
   flex: 1;
-  min-width: 0; /* 允许截断 */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -203,11 +187,7 @@
   text-overflow: ellipsis;
 }
 
-.bangumi-result-nsfw-badge {
-  font-size: 0.9em;
-  cursor: help;
-  flex-shrink: 0;
-}
+.bangumi-result-nsfw-badge { font-size: 0.9em; cursor: help; flex-shrink: 0; }
 
 .bangumi-result-subtitle {
   font-size: 0.85em;
@@ -223,7 +203,6 @@
   font-weight: 500;
 }
 
-/* 分页条 */
 .bangumi-pagination-wrap {
   display: flex;
   justify-content: space-between;
@@ -247,13 +226,10 @@
   color: var(--bgm-accent);
 }
 
-.bangumi-page-info {
-  font-size: 0.9em;
-  color: var(--bgm-text-muted);
-}
+.bangumi-page-info { font-size: 0.9em; color: var(--bgm-text-muted); }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   3. SubjectiveModal 主观输入与公用表单
+   3. SubjectiveModal / 公用表单
    ────────────────────────────────────────────────────────────────────────── */
 
 .bangumi-input-row,
@@ -283,10 +259,7 @@
   padding: 8px 12px;
 }
 
-.bangumi-input-row textarea {
-  min-height: 80px;
-  resize: vertical;
-}
+.bangumi-input-row textarea { min-height: 80px; resize: vertical; }
 
 .bangumi-confirm-btns {
   display: flex;
@@ -303,17 +276,42 @@
   font-weight: 600;
 }
 
-.bangumi-confirm-ok:hover {
-  background-color: var(--bgm-accent-hover) !important;
+.bangumi-confirm-ok:hover { background-color: var(--bgm-accent-hover) !important; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   4. ConflictModal 文件名冲突弹窗（新增）
+   ────────────────────────────────────────────────────────────────────────── */
+
+.bgm-conflict-path {
+  display: block;
+  margin: var(--bgm-spacing-sm) 0 var(--bgm-spacing-md);
+  padding: 6px 10px;
+  background-color: var(--bgm-bg-secondary);
+  border-radius: var(--bgm-radius-sm);
+  font-size: 0.85em;
+  color: var(--bgm-text-muted);
+  word-break: break-all;
+}
+
+.bgm-conflict-hint {
+  color: var(--bgm-text-muted);
+  font-size: 0.9em;
+  margin-bottom: var(--bgm-spacing-md);
+}
+
+.bgm-conflict-availability {
+  font-size: 0.85em;
+  margin: calc(var(--bgm-spacing-sm) * -1) 0 var(--bgm-spacing-md);
+  padding-left: 4px;
+  min-height: 1.2em;
+  transition: color 0.2s ease;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   4. SettingTab 设置页面样式
+   5. SettingTab
    ────────────────────────────────────────────────────────────────────────── */
 
-.bgm-settings-container {
-  padding-bottom: 40px;
-}
+.bgm-settings-container { padding-bottom: 40px; }
 
 .bgm-settings-title {
   border-bottom: 2px solid var(--bgm-accent);
@@ -322,7 +320,6 @@
   color: var(--bgm-text-normal);
 }
 
-/* 数据仪表盘卡片 */
 .bgm-dashboard-card {
   background-color: var(--bgm-bg-secondary);
   border: 1px solid var(--bgm-border);
@@ -344,17 +341,10 @@
   border: 1px dashed var(--bgm-border);
 }
 
-.bgm-status-item {
-  font-weight: 500;
-  color: var(--bgm-text-normal);
-}
+.bgm-status-item { font-weight: 500; color: var(--bgm-text-normal); }
 
-.bgm-text-muted {
-  color: var(--bgm-text-muted);
-  font-size: 0.9em;
-}
+.bgm-text-muted { color: var(--bgm-text-muted); font-size: 0.9em; }
 
-/* 分类折叠面板 */
 .bgm-category-details {
   background-color: var(--bgm-bg-secondary);
   border: 1px solid var(--bgm-border);
@@ -371,26 +361,52 @@
   background-color: var(--bgm-bg-primary);
   transition: background-color 0.2s ease;
   user-select: none;
-  list-style: none; /* 隐藏小三角 */
+  list-style: none;
 }
 
-.bgm-category-summary::-webkit-details-marker {
-  display: none;
-}
-
-.bgm-category-summary:hover {
-  background-color: var(--bgm-bg-hover);
-}
+.bgm-category-summary::-webkit-details-marker { display: none; }
+.bgm-category-summary:hover { background-color: var(--bgm-bg-hover); }
 
 .bgm-category-details[open] .bgm-category-summary {
   border-bottom: 1px solid var(--bgm-border);
   margin-bottom: var(--bgm-spacing-sm);
 }
 
-/* 预览区域 */
-.bgm-preview-btn {
-  margin: var(--bgm-spacing-md) 0 0 var(--bgm-spacing-md);
+.bgm-preview-btn { margin: var(--bgm-spacing-md) 0 0 var(--bgm-spacing-md); margin-bottom: var(--bgm-spacing-md); }
+
+/* 扩展索引状态列表 */
+.bgm-index-ext-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bgm-spacing-sm);
+  padding: var(--bgm-spacing-sm) var(--bgm-spacing-md);
+  background-color: var(--bgm-bg-primary);
+  border-radius: var(--bgm-radius-sm);
   margin-bottom: var(--bgm-spacing-md);
+  border: 1px solid var(--bgm-border);
+}
+
+.bgm-index-ext-item {
+  padding: 2px 8px;
+  border-right: 1px solid var(--bgm-border);
+}
+
+.bgm-index-ext-item:last-child { border-right: none; }
+
+/* 警告提示文字 */
+.bgm-text-warning {
+  color: var(--text-warning, #d97706);
+  font-size: 0.9em;
+}
+
+.bgm-warning-hint {
+  margin: var(--bgm-spacing-sm) 0;
+  padding: 8px 12px;
+  background-color: rgba(217, 119, 6, 0.08);
+  border-left: 3px solid var(--text-warning, #d97706);
+  border-radius: 0 var(--bgm-radius-sm) var(--bgm-radius-sm) 0;
+  font-size: 0.85em;
+  color: var(--text-warning, #d97706);
 }
 
 .bgm-template-preview {

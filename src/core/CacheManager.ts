@@ -7,42 +7,31 @@ import { CACHE_FILE_NAME, PLUGIN_DATA_DIR } from '../constants';
 /**
  * 增量缓存管理器
  *
- * 职责：
- * - 维护 `user_added.json` 的内存 Map 镜像
- * - 通过 `app.vault.adapter` 跨平台异步读写
- * - `set/delete` 触发去抖写盘，避免高频 IO
- *
- * 数据流：
- * - `set(id, data)` 接收 `archive` / `api` 来源数据，落盘时统一标记 source='cache'
- * - `get(id)` 返回的对象 source 必为 'cache'，DataManager 可据此区分级联层级
- *
- * 仅由 `DataManager` 调用，下游模块不直接持有实例。
+ * 修复：writeToDisk 的串行化改用互斥锁模式（写盘队列），
+ * 避免原实现中 Promise 链越来越长导致的内存泄漏和判断失效问题。
  */
 export class CacheManager {
-  private readonly app: App;
+  private readonly app:      App;
   private readonly filePath: string;
-  private readonly dirPath: string;
+  private readonly dirPath:  string;
 
-  private store = new Map<number, SubjectData>();
+  private store  = new Map<number, SubjectData>();
   private loaded = false;
 
-  /** 去抖写盘计时器；null 表示当前无待写任务 */
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 正在进行的写盘 Promise，flush() / unload() 会 await 它 */
-  private writing: Promise<void> | null = null;
+  /** 当前是否有写盘任务正在执行 */
+  private isWriting = false;
+  /** 写盘任务排队标志：true 表示有新数据等待下一次写盘 */
+  private pendingWrite = false;
+
   private static readonly FLUSH_DELAY_MS = 300;
 
   constructor(app: App, pluginDir: string) {
-    this.app = app;
-    this.dirPath = normalizePath(`${pluginDir}/${PLUGIN_DATA_DIR}`);
+    this.app      = app;
+    this.dirPath  = normalizePath(`${pluginDir}/${PLUGIN_DATA_DIR}`);
     this.filePath = normalizePath(`${this.dirPath}/${CACHE_FILE_NAME}`);
   }
 
-  /**
-   * 从磁盘加载缓存到内存。
-   * 文件不存在 → 空 Map；JSON 损坏 → 警告 + 空 Map（保证插件可用）。
-   * 幂等：重复调用直接返回。
-   */
   async load(): Promise<void> {
     if (this.loaded) return;
     this.loaded = true;
@@ -54,9 +43,9 @@ export class CacheManager {
     }
 
     try {
-      const raw = await adapter.read(this.filePath);
+      const raw    = await adapter.read(this.filePath);
       const parsed = JSON.parse(raw) as Record<string, SubjectData>;
-      const map = new Map<number, SubjectData>();
+      const map    = new Map<number, SubjectData>();
       for (const [key, value] of Object.entries(parsed)) {
         const id = Number(key);
         if (!Number.isFinite(id) || !value || typeof value !== 'object') continue;
@@ -70,56 +59,51 @@ export class CacheManager {
     }
   }
 
-  /** 根据 ID 获取缓存条目，无命中返回 undefined。 */
   get(id: number): SubjectData | undefined {
     return this.store.get(id);
   }
 
-  /** 仅判断 ID 是否在缓存中，不构造结果对象。 */
   has(id: number): boolean {
     return this.store.has(id);
   }
 
-  /**
-   * 写入或更新一条缓存。
-   * 强制覆盖 `source = 'cache'`，调度去抖写盘。
-   */
   set(id: number, data: SubjectData): void {
     this.store.set(id, { ...data, source: 'cache' });
     this.scheduleFlush();
   }
 
-  /** 删除一条缓存，返回是否真的删了；命中则调度写盘。 */
   delete(id: number): boolean {
     const ok = this.store.delete(id);
     if (ok) this.scheduleFlush();
     return ok;
   }
 
-  /** 缓存条目数。 */
   size(): number {
     return this.store.size;
   }
 
-  /** 遍历所有缓存条目，供离线搜索回填使用。 */
   entries(): IterableIterator<[number, SubjectData]> {
     return this.store.entries();
   }
 
-  /**
-   * 立即写盘（取消尚未触发的去抖计时），并等待写入完成。
-   * 主流程退出（plugin.onunload）前必须 await 此方法。
-   */
   async flush(): Promise<void> {
     if (this.flushTimer !== null) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    await this.writeToDisk();
+    // 等待当前写盘完成后再执行一次，确保最新数据落盘
+    if (this.isWriting) {
+      await new Promise<void>(resolve => {
+        const check = setInterval(() => {
+          if (!this.isWriting) { clearInterval(check); resolve(); }
+        }, 50);
+      });
+    }
+    await this.doWrite();
   }
 
   // ──────────────────────────────────────────────────
-  // 内部：去抖与写盘
+  // 内部：去抖与写盘（互斥锁模式）
   // ──────────────────────────────────────────────────
 
   private scheduleFlush(): void {
@@ -131,19 +115,33 @@ export class CacheManager {
   }
 
   /**
-   * 将当前内存 Map 序列化并整体覆盖写入磁盘。
-   * 通过链式 Promise 严格串行化并发调用：每次调用都追加在上一个写盘任务之后，
-   * 避免"await 完成后、赋值前"的窗口期导致两个 doWrite() 并发执行。
+   * 修复：用互斥锁模式替代 Promise 链。
+   * - isWriting=true 时，设 pendingWrite=true 后直接返回，当前写完后自动触发下一次
+   * - 不存在无限增长的 Promise 链
    */
-  private writeToDisk(): Promise<void> {
-  const next = (this.writing ?? Promise.resolve()).then(() => this.doWrite());
-  this.writing = next.finally(() => {
-    if (this.writing === next) this.writing = null;
-  });
-  return this.writing;
-}
+  private async writeToDisk(): Promise<void> {
+    if (this.isWriting) {
+      this.pendingWrite = true;
+      return;
+    }
+
+    this.isWriting    = true;
+    this.pendingWrite = false;
+
+    try {
+      await this.doWrite();
+    } finally {
+      this.isWriting = false;
+      // 如果写盘期间又有新数据，立即再写一次
+      if (this.pendingWrite) {
+        this.pendingWrite = false;
+        void this.writeToDisk();
+      }
+    }
+  }
+
   private async doWrite(): Promise<void> {
-    const adapter = this.app.vault.adapter;
+    const adapter  = this.app.vault.adapter;
     const snapshot: Record<string, SubjectData> = {};
     for (const [id, data] of this.store) {
       snapshot[String(id)] = data;
