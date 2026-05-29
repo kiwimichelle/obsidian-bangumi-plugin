@@ -92,6 +92,21 @@ export interface ApiCharacter {
   }>;
 }
 
+/** /v0/subjects/:id/episodes 单条响应 */
+export interface ApiEpisode {
+  id:        number;
+  subject_id: number;
+  /** 0=正篇, 1=SP, 2=OP, 3=ED */
+  type:      number;
+  /** 集数序号 */
+  sort:      number;
+  name:      string;
+  name_cn?:  string;
+  airdate?:  string;
+  duration?: string;
+  desc?:     string;
+}
+
 // ─────────────────────────────────────────────
 // 三、归一化统一结构
 // ─────────────────────────────────────────────
@@ -141,6 +156,12 @@ export interface SubjectData {
   relationsLoaded: boolean;
   /** 在线模式拉取的声优数据；离线模式为空数组 */
   castCredits:     CastCredit[];
+  /**
+   * 在线模式从 /v0/subjects/:id/episodes 拉取的分集/曲目数据。
+   * 离线模式为空数组（由 EpisodeIndexBuilder 提供）。
+   * NoteBuilder 优先使用此字段，回退到 DataManager.getMainEpisodes()。
+   */
+  onlineEpisodes:  EpisodeData[];
   source:          'cache' | 'archive' | 'api';
 }
 

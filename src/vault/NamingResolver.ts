@@ -1,6 +1,6 @@
 import { App, Modal, TFile } from 'obsidian';
 import type { BangumiSettings, NamingResult, SubjectData } from '../types';
-import { TYPE_KEYS } from '../constants';
+import { SUBJECT_TYPE_LABEL, TYPE_KEYS } from '../constants';
 import { parseYearSeason } from '../note/NoteBuilder';
 
 const ILLEGAL_CHARS = /[\\/:*?"<>|#]/g;
@@ -13,52 +13,65 @@ function sanitize(name: string): string {
 // NamingResolver
 // ─────────────────────────────────────────────
 
-/**
- * 修复：resolve() 只做冲突检测，不再自动改名。
- * 所有冲突场景都返回冲突信息，由 ConflictModal 让用户决定最终文件名。
- */
 export class NamingResolver {
   constructor(
     private readonly app:      App,
     private readonly settings: BangumiSettings,
   ) {}
 
-  resolve(data: SubjectData): NamingResult {
-    const baseName  = sanitize(data.name || data.nameOriginal);
-    const { typeKey } = data;
-    const archiveRoot = this.settings.subjectTypes[typeKey].archiveRoot;
+  /**
+   * 修复：不再按路径猜测文件位置。
+   *
+   * 旧实现只查 archiveRoot/baseName.md，但动画/三次元按季度归档后
+   * 实际路径是 archiveRoot/2014/01月/baseName.md，永远查不到。
+   *
+   * 新实现：
+   * 1. 先用 MetadataCache 全库扫描 bangumi_id，找到已存在的同 ID 文件
+   * 2. 再检测同目标目录下是否有同名异 ID 文件（same 冲突）
+   * 3. 最后检测跨媒介同名冲突（other 冲突）
+   */
+  resolve(data: SubjectData, targetDir: string): NamingResult {
+    const baseName = sanitize(data.name || data.nameOriginal);
 
-    // 跨媒介检测
+    // ── 1. 全库查找同 bangumi_id 的已存在文件 ──────────────────
+    const existingById = this.findByBangumiId(data.id);
+    if (existingById) {
+      return {
+        filename:     baseName,
+        existingPath: existingById.path,
+        conflict:     'none',   // 同 ID 更新场景
+      };
+    }
+
+    // ── 2. 目标路径同名检测 ─────────────────────────────────────
+    const targetPath = `${targetDir}/${baseName}.md`;
+    const existing   = this.app.vault.getAbstractFileByPath(targetPath);
+    if (existing instanceof TFile) {
+      // 同路径同名但不同 ID（same 冲突），建议加年份消歧
+      const { year } = parseYearSeason(data.date);
+      return {
+        filename:     `${baseName} (${year})`,
+        existingPath: existing.path,
+        conflict:     'same',
+      };
+    }
+
+    // ── 3. 跨媒介同名检测 ──────────────────────────────────────
     for (const key of TYPE_KEYS) {
-      if (key === typeKey) continue;
+      if (key === data.typeKey) continue;
       const otherRoot = this.settings.subjectTypes[key].archiveRoot;
+      // 跨媒介只检测根目录，不递归（避免性能问题）
       const hit = this.app.vault.getAbstractFileByPath(`${otherRoot}/${baseName}.md`);
       if (hit instanceof TFile) {
-        return { filename: baseName, existingPath: hit.path, conflict: 'other' };
+        return {
+          filename:     `${baseName} (${SUBJECT_TYPE_LABEL[data.typeKey]})`,
+          existingPath: hit.path,
+          conflict:     'other',
+        };
       }
     }
 
-    // 同类检测
-    const existing = this.app.vault.getAbstractFileByPath(`${archiveRoot}/${baseName}.md`);
-    if (!(existing instanceof TFile)) {
-      return { filename: baseName, existingPath: '', conflict: 'none' };
-    }
-
-    const cached     = this.app.metadataCache.getFileCache(existing);
-    const existingId = cached?.frontmatter?.['bangumi_id'] as number | undefined;
-
-    if (existingId === data.id) {
-      // 同 ID 更新：文件名不变，existingPath 供调用方定位
-      return { filename: baseName, existingPath: existing.path, conflict: 'none' };
-    }
-
-    // 不同 ID：有冲突，返回建议文件名（含年份），用户可在弹窗里修改
-    const { year } = parseYearSeason(data.date);
-    return {
-      filename:     `${baseName} (${year})`,
-      existingPath: existing.path,
-      conflict:     'same',
-    };
+    return { filename: baseName, existingPath: '', conflict: 'none' };
   }
 
   /**
@@ -69,30 +82,44 @@ export class NamingResolver {
     const path = `${targetDir}/${filename}.md`;
     return !(this.app.vault.getAbstractFileByPath(path) instanceof TFile);
   }
+
+  // ─────────────────────────────────────────────
+  // 内部工具
+  // ─────────────────────────────────────────────
+
+  /**
+   * 通过 MetadataCache 全库搜索指定 bangumi_id 的文件。
+   * 利用 resolvedLinks / 遍历 getMarkdownFiles 的 frontmatter 缓存。
+   * 时间复杂度 O(n)，n 为 vault 内 Markdown 文件数量，可接受。
+   */
+  private findByBangumiId(id: number): TFile | null {
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fmId  = cache?.frontmatter?.['bangumi_id'];
+      // frontmatter 里的数字可能被解析为 number 或 string，都要兼容
+      if (fmId === id || fmId === String(id)) {
+        return file;
+      }
+    }
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────
-// ConflictModal：文件名冲突解决弹窗
+// ConflictModal
 // ─────────────────────────────────────────────
 
 export interface ConflictResolution {
-  /** 用户最终确认的文件名（不含 .md） */
   filename:  string;
-  /** true = 覆盖已有文件，false = 新建此名称 */
   overwrite: boolean;
 }
 
-/**
- * 修复：所有冲突场景（same / other）统一走此弹窗，让用户自己决定：
- * - 修改文件名（可编辑输入框，实时校验是否可用）
- * - 选择覆盖已有文件 或 新建为当前文件名
- */
 export class ConflictModal extends Modal {
   private settled  = false;
   private inputEl!: HTMLInputElement;
   private hintEl!:  HTMLElement;
-  private overwriteBtn!: HTMLButtonElement;
-  private newfileBtn!:   HTMLButtonElement;
+  private newfileBtn!: HTMLButtonElement;
 
   private constructor(
     app: App,
@@ -126,38 +153,33 @@ export class ConflictModal extends Modal {
     this.setTitle('文件名冲突');
 
     const conflictDesc = this.conflictType === 'same'
-      ? `同目录下已存在同名但不同 ID 的笔记：`
-      : `其他分类目录下已存在同名笔记：`;
+      ? '同目录下已存在同名但不同 ID 的笔记：'
+      : '其他分类目录下已存在同名笔记：';
 
     contentEl.createEl('p', { text: conflictDesc });
     contentEl.createEl('code', { text: this.existingPath, cls: 'bgm-conflict-path' });
     contentEl.createEl('p', { text: '请修改文件名，或选择覆盖已有文件：', cls: 'bgm-conflict-hint' });
 
-    // 文件名输入框
     const inputRow = contentEl.createEl('div', { cls: 'bangumi-input-row' });
     inputRow.createEl('label', { text: '文件名' });
     this.inputEl = inputRow.createEl('input', { type: 'text' });
     this.inputEl.value = this.suggestedName;
     this.inputEl.style.flex = '1';
 
-    // 实时校验提示
     this.hintEl = contentEl.createEl('div', { cls: 'bgm-conflict-availability' });
     this.validateInput();
 
     this.inputEl.addEventListener('input', () => this.validateInput());
 
-    // 按钮行
     const btnRow = contentEl.createEl('div', { cls: 'bangumi-confirm-btns' });
 
     const cancelBtn = btnRow.createEl('button', { text: '取消' });
     cancelBtn.addEventListener('click', () => {
-      this.settled = true;
-      this.resolve(null);
-      this.close();
+      this.settled = true; this.resolve(null); this.close();
     });
 
-    this.overwriteBtn = btnRow.createEl('button', { text: '覆盖已有文件' });
-    this.overwriteBtn.addEventListener('click', () => {
+    const overwriteBtn = btnRow.createEl('button', { text: '覆盖已有文件' });
+    overwriteBtn.addEventListener('click', () => {
       this.settled = true;
       this.resolve({ filename: this.inputEl.value.trim(), overwrite: true });
       this.close();
@@ -176,10 +198,7 @@ export class ConflictModal extends Modal {
   }
 
   onClose(): void {
-    if (!this.settled) {
-      this.settled = true;
-      this.resolve(null);
-    }
+    if (!this.settled) { this.settled = true; this.resolve(null); }
     this.contentEl.empty();
   }
 
@@ -194,18 +213,18 @@ export class ConflictModal extends Modal {
     if (!name) {
       this.hintEl.setText('⚠️ 文件名不能为空');
       this.hintEl.style.color = 'var(--text-error)';
-      this.newfileBtn.disabled = true;
+      if (this.newfileBtn) this.newfileBtn.disabled = true;
       return;
     }
     const available = this.resolver.checkFilenameAvailable(name, this.targetDir);
     if (available) {
       this.hintEl.setText('✅ 此名称可用');
       this.hintEl.style.color = 'var(--text-success)';
-      this.newfileBtn.disabled = false;
+      if (this.newfileBtn) this.newfileBtn.disabled = false;
     } else {
       this.hintEl.setText('⚠️ 此名称已被占用，请修改或选择覆盖');
       this.hintEl.style.color = 'var(--text-warning)';
-      this.newfileBtn.disabled = true;
+      if (this.newfileBtn) this.newfileBtn.disabled = true;
     }
   }
 }

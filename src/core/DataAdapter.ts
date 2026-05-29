@@ -2,6 +2,7 @@ import type {
   ApiRelation,
   ApiSubject,
   CastCredit,
+  EpisodeData,
   InfoboxEntry,
   RawArchiveSubject,
   SubjectData,
@@ -37,20 +38,30 @@ export class DataAdapter {
       nsfw:            raw.nsfw ?? false,
       relations:       [],
       relationsLoaded: false,
-      castCredits:     [],   // 离线包无声优数据
+      castCredits:     [],
+      onlineEpisodes:  [],
       source:          'archive',
     };
   }
 
   static fromApi(
-    raw:         ApiSubject,
-    relations:   ApiRelation[] = [],
-    castCredits: CastCredit[]  = [],   // 新增：声优数据
+    raw:            ApiSubject,
+    relations:      ApiRelation[]  = [],
+    castCredits:    CastCredit[]   = [],
+    onlineEpisodes: EpisodeData[]  = [],
   ): SubjectData {
-    const typeKey  = mapTypeKey(raw.type);
-    const name     = raw.name_cn?.trim() || raw.name;
+    const typeKey = mapTypeKey(raw.type);
+    const name    = raw.name_cn?.trim() || raw.name;
+
+    // 修复：API 返回的 images 字段值可能是空字符串而非 null/undefined。
+    // ?? 只跳过 null/undefined，空字符串会被直接使用导致封面为空。
+    // 改用 || 链，确保空字符串也继续向下查找。
     const coverUrl =
-      raw.images?.large ?? raw.images?.common ?? raw.images?.medium ?? '';
+      raw.images?.large?.trim()  ||
+      raw.images?.common?.trim() ||
+      raw.images?.medium?.trim() ||
+      raw.images?.small?.trim()  ||
+      '';
 
     return {
       id:              raw.id,
@@ -70,7 +81,8 @@ export class DataAdapter {
       nsfw:            raw.nsfw ?? false,
       relations:       relations.map(normalizeRelation),
       relationsLoaded: true,
-      castCredits,     // 声优数据直接存入
+      castCredits,
+      onlineEpisodes,
       source:          'api',
     };
   }
@@ -81,7 +93,7 @@ function mapTypeKey(type: number): SubjectTypeKey {
 }
 
 function pickTopTags(
-  tags:     Array<{ name: string; count: number }> | undefined,
+  tags:      Array<{ name: string; count: number }> | undefined,
   metaTags?: string[],
 ): string[] {
   const merged: Array<{ name: string; count: number }> = [];
@@ -120,7 +132,11 @@ function parseApiInfobox(raw: Array<{ key: string; value: unknown }>): InfoboxEn
 function flattenApiValue(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === null || value === undefined) return '';
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
     return String(value);
   }
   if (Array.isArray(value)) {

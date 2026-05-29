@@ -297,6 +297,20 @@ export class BangumiSettingTab extends PluginSettingTab {
           })
         );
 
+      new Setting(details)
+        .setName('封面保存路径')
+        .setDesc('封面图片的保存目录（Vault 内相对路径）。留空则自动存入「归档根目录/Covers」子文件夹，与笔记放在一起。')
+        .addText(text => {
+          text
+            .setPlaceholder('留空 = 自动跟随归档根目录')
+            .setValue(config.coverPath ?? '')
+            .onChange(async (val) => {
+              config.coverPath = val.trim();
+              await this.saveSettings();
+            });
+          text.inputEl.style.width = '100%';
+        });
+
       if (['anime', 'real'].includes(type)) {
         new Setting(details)
           .setName('归档层级策略')

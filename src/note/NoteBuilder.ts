@@ -62,7 +62,9 @@ export class NoteBuilder {
     year:           string,
     season:         string,
   ): Record<string, string> {
-    const episodes    = this.dataManager?.getMainEpisodes(data.id) ?? [];
+    const episodes = data.onlineEpisodes?.length > 0
+      ? data.onlineEpisodes                              // 在线模式：直接用 API 拉取的数据
+      : (this.dataManager?.getMainEpisodes(data.id) ?? []); // 离线模式：从索引读取
     const credits     = this.dataManager?.getCredits(data.id) ?? [];
     const castCredits = data.castCredits ?? [];
 

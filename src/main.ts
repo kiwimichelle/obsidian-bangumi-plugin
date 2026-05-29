@@ -124,6 +124,9 @@ export default class BangumiPlugin extends Plugin {
 
   private async migrateSettings(): Promise<void> {
     const s = this.settings;
+    let dirty = false;
+
+    // 旧版单路径 → 新版多路径迁移
     // eslint-disable-next-line @typescript-eslint/no-deprecated
     if (s.offlineDbPath && !s.offlineDbPaths?.subject) {
       s.offlineDbPaths = {
@@ -134,12 +137,25 @@ export default class BangumiPlugin extends Plugin {
         subjectPersons: '',
         relations:      '',
       };
-      await this.saveSettings();
+      dirty = true;
     }
     if (!s.offlineDbPaths) {
       s.offlineDbPaths = { ...DEFAULT_OFFLINE_DB_PATHS };
-      await this.saveSettings();
+      dirty = true;
     }
+
+    // 旧版 coverPath 默认值 'assets/covers' → 新版空字符串（跟随归档根目录）
+    // 只迁移未被用户手动修改过的默认值
+    if (s.subjectTypes) {
+      for (const key of Object.keys(s.subjectTypes) as (keyof typeof s.subjectTypes)[]) {
+        if (s.subjectTypes[key].coverPath === 'assets/covers') {
+          s.subjectTypes[key].coverPath = '';
+          dirty = true;
+        }
+      }
+    }
+
+    if (dirty) await this.saveSettings();
   }
 
   async onunload() {
@@ -170,7 +186,7 @@ export default class BangumiPlugin extends Plugin {
 
     // 1. 命名冲突检测
     const namingResolver = new NamingResolver(this.app, this.settings);
-    const naming         = namingResolver.resolve(data);
+    const naming         = namingResolver.resolve(data, targetDir);
 
     let finalFilename = naming.filename;
     let doOverwrite   = false;

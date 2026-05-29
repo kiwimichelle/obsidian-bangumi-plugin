@@ -1,10 +1,12 @@
 import { requestUrl } from 'obsidian';
 import type {
   ApiCharacter,
+  ApiEpisode,
   ApiRelation,
   ApiSubject,
   BangumiSettings,
   CastCredit,
+  EpisodeData,
   SearchQuery,
   SearchResponse,
   SearchResultItem,
@@ -57,16 +59,17 @@ export class OnlineFetcher {
 
   /**
    * 按 ID 精确拉取条目。
-   * 修复：并行请求 subjects（关联）和 characters（声优），减少等待时间。
+   * 并行请求 subjects（关联）、characters（声优）、episodes（分集/曲目）。
    */
   async fetchById(id: number): Promise<SubjectData | null> {
     const subjectResult = await this.requestRaw<ApiSubject>(`/v0/subjects/${id}`);
     if (subjectResult === NOT_FOUND) return null;
 
-    // 并行请求关联条目和角色/声优数据
-    const [relsResult, charsResult] = await Promise.allSettled([
+    // 三路并行：关联条目、声优、分集/曲目
+    const [relsResult, charsResult, epsResult] = await Promise.allSettled([
       this.requestRaw<ApiRelation[]>(`/v0/subjects/${id}/subjects`),
       this.requestRaw<ApiCharacter[]>(`/v0/subjects/${id}/characters`),
+      this.requestRaw<{ data: ApiEpisode[] }>(`/v0/subjects/${id}/episodes?limit=100`),
     ]);
 
     let relations:      ApiRelation[] = [];
@@ -89,7 +92,18 @@ export class OnlineFetcher {
       console.warn(`[bangumi] #${id} 声优数据请求失败`, charsResult.reason);
     }
 
-    const data = DataAdapter.fromApi(subjectResult, relations, castCredits);
+    // 分集/曲目：API 返回 { data: ApiEpisode[] }
+    let onlineEpisodes: EpisodeData[] = [];
+    if (epsResult.status === 'fulfilled') {
+      const e = epsResult.value;
+      if (e !== NOT_FOUND && e && Array.isArray(e.data)) {
+        onlineEpisodes = normalizeEpisodes(id, e.data);
+      }
+    } else {
+      console.warn(`[bangumi] #${id} 分集数据请求失败`, epsResult.reason);
+    }
+
+    const data = DataAdapter.fromApi(subjectResult, relations, castCredits, onlineEpisodes);
     if (!relationsLoaded) data.relationsLoaded = false;
     return data;
   }
@@ -101,6 +115,36 @@ export class OnlineFetcher {
     const result = await this.requestRaw<ApiRelation[]>(`/v0/subjects/${id}/subjects`);
     if (result === NOT_FOUND || !Array.isArray(result)) return [];
     return result.map(normalizeRelation);
+  }
+
+  /**
+   * 仅拉取角色/声优数据，供离线条目补全 castCredits 使用。
+   * 失败返回空数组，不抛错。
+   */
+  async fetchCharactersOnly(id: number): Promise<CastCredit[]> {
+    try {
+      const result = await this.requestRaw<ApiCharacter[]>(`/v0/subjects/${id}/characters`);
+      if (result === NOT_FOUND || !Array.isArray(result)) return [];
+      return normalizeCharacters(result);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 仅拉取分集/曲目数据，供离线条目补全 onlineEpisodes 使用。
+   * 失败返回空数组，不抛错。
+   */
+  async fetchEpisodesOnly(id: number): Promise<EpisodeData[]> {
+    try {
+      const result = await this.requestRaw<{ data: ApiEpisode[] }>(
+        `/v0/subjects/${id}/episodes?limit=100`,
+      );
+      if (result === NOT_FOUND || !result || !Array.isArray(result.data)) return [];
+      return normalizeEpisodes(id, result.data);
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -250,14 +294,35 @@ function normalizeCharacters(chars: ApiCharacter[]): CastCredit[] {
   return result;
 }
 
+/**
+ * 将 API episodes 响应归一化为 EpisodeData[]，与离线索引结构对齐。
+ * 按 type → sort 排序：正篇(0)在前，SP/OP/ED 在后。
+ */
+function normalizeEpisodes(subjectId: number, eps: ApiEpisode[]): EpisodeData[] {
+  return eps
+    .map(ep => ({
+      id:        ep.id,
+      subjectId,
+      type:      ep.type ?? 0,
+      sort:      ep.sort ?? 0,
+      name:      ep.name ?? '',
+      nameCn:    ep.name_cn?.trim() ?? '',
+      airdate:   ep.airdate ?? '',
+      duration:  ep.duration ?? '',
+      desc:      ep.desc ?? '',
+    }))
+    .sort((a, b) => a.type !== b.type ? a.type - b.type : a.sort - b.sort);
+}
+
 function toSearchResultItem(item: ApiSearchItem): SearchResultItem {
   const typeKey: SubjectTypeKey = SUBJECT_TYPE_MAP[item.type] ?? 'anime';
   const name     = item.name_cn?.trim() || item.name;
+  // 修复：同 DataAdapter，用 || 链避免空字符串问题
   const coverUrl =
-    item.image ??
-    item.images?.large ??
-    item.images?.common ??
-    item.images?.medium ??
+    item.image?.trim()          ||
+    item.images?.large?.trim()  ||
+    item.images?.common?.trim() ||
+    item.images?.medium?.trim() ||
     '';
 
   return {

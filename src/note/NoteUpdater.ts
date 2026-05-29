@@ -32,8 +32,8 @@ const POLICIES: Record<SubjectTypeKey, PreservePolicy> = {
   },
   music: {
     headerPrefixes:   ['**收听状态**', '**收听平台**'],
-    preserveSections: ['# 🎵 收听笔记', '# 个人总结'],
-    appendSections:   [],
+    preserveSections: ['# 个人总结'],
+    appendSections:   ['# 收听笔记'],  // 修复：收听笔记改为追加模式，保留历史记录
   },
   real: {
     headerPrefixes:   ['**已观看集数**', '**观看网址**'],

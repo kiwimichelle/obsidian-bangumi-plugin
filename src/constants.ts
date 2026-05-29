@@ -258,7 +258,10 @@ export const DEFAULT_MUSIC_TEMPLATE = `**收听状态**： {{my_status}}
 # 简介
 {{summary}}
 
-# 🎵 收听笔记
+# 🎵 曲目列表
+{{eps_checkboxes}}
+
+# 收听笔记
 
 # 个人总结
 `;

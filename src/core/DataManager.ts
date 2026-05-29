@@ -109,12 +109,35 @@ export class DataManager {
       if (this.relationIndex?.isReady()) {
         archiveHit.relations      = this.relationIndex.getRelations(id);
         archiveHit.relationsLoaded = true;
-        this.cache.set(id, archiveHit);
-        this.scheduleEnrich(archiveHit, true, true);
-      } else {
-        this.cache.set(id, archiveHit);
-        this.scheduleEnrich(archiveHit, true);
       }
+
+      // 修复：离线条目缺少声优和分集数据，同步从 API 补全。
+      // characters（声优）和 episodes（分集/曲目）是用户建档时就需要的核心数据，
+      // 不能异步补全（那样建档时笔记已写好，补全来不及生效）。
+      // 并行请求两个端点，失败时静默降级（不影响建档主流程）。
+      const [charsResult, epsResult] = await Promise.allSettled([
+        this.fetcher.fetchCharactersOnly(id),
+        this.fetcher.fetchEpisodesOnly(id),
+      ]);
+
+      if (charsResult.status === 'fulfilled' && charsResult.value.length > 0) {
+        archiveHit.castCredits = charsResult.value;
+      }
+      if (epsResult.status === 'fulfilled' && epsResult.value.length > 0) {
+        archiveHit.onlineEpisodes = epsResult.value;
+      }
+
+      // 封面 URL 缺失时也同步补全（部分老条目 archive 无 image 字段）
+      if (!archiveHit.coverUrl) {
+        try {
+          const apiData = await this.fetcher.fetchById(id);
+          if (apiData?.coverUrl) archiveHit.coverUrl = apiData.coverUrl;
+        } catch { /* 静默跳过 */ }
+      }
+
+      this.cache.set(id, archiveHit);
+      // scraper 补全 infobox 继续异步（非核心数据）
+      this.scheduleEnrich(archiveHit, true, true);
       return archiveHit;
     }
 

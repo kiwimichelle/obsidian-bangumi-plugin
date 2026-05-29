@@ -27,7 +27,12 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
   for (const [key, value] of Object.entries(vars)) {
     result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value ?? '');
   }
+  // 清理表格中值为空的行（两列格式：| 键 |  |）
   result = result.replace(/^\|[^|\n]+\|\s*\|\s*$/gm, '');
+  // 修复表格空行：表格行之间的空行会导致 Markdown 表格断裂。
+  // 清理两个相邻表格行之间的空行（空行被行清理产生的情况）
+  result = result.replace(/(^\|[^\n]*\|$)\n\n(^\|)/gm, '$1\n$2');
+  // 清理连续空行（3 个以上缩减为 1 个）
   result = result.replace(/\n{3,}/g, '\n\n');
   return result;
 }
